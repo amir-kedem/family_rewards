@@ -65,14 +65,14 @@ st.markdown(
     
     /* עמודה 1 (שם) - יישור לימין */
     td:nth-child(1) {
-        text-align: right !important;
-        padding-right: 20px !important;
+        text-align: center !important;
         width: 60%;
     }
     
     /* עמודה 2 (נקודות) - יישור למרכז */
     td:nth-child(2) {
-        text-align: center !important;
+        text-align: right !important;
+        padding-right: 20px
         width: 40%;
     }
 
