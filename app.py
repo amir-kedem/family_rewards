@@ -27,15 +27,12 @@ def get_data():
 
 df = get_data()
 
-# --- פונקציית עיצוב (מתוקנת למניעת TypeError) ---
 def style_points(val):
     try:
-        # המרה לציפה לצורך השוואה בטוחה
-        num_val = float(val)
-        color = 'red' if num_val < 20 else 'black'
-        return f'color: {color}; font-weight: bold'
-    except (ValueError, TypeError):
-        return 'color: black'
+        # כל ניקוד יוצג בירוק כהה ובכתב מודגש (Bold)
+        return 'color: #28a745; font-weight: 900; font-size: 20px;'
+    except:
+        return 'font-weight: bold;'
 
 # --- ממשק ראשי ---
 st.title("🏠 הבית המשותף שלנו")
@@ -54,35 +51,39 @@ st.progress(min(total_points / FAMILY_GOAL, 1.0))
 # --- כותרת הטבלה (ממורכזת דרך CSS) ---
 st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
 
-# --- הזרקת ה-CSS הסופי (מעלים אינדקס ומיישר עמודות) ---
+# --- 1. הזרקת CSS "אטומי" להעלמת האינדקס ויישור מושלם ---
 st.markdown(
     """
     <style>
-    /* 1. העלמת עמודת האינדקס (המספרים משמאל) */
-    thead tr th:first-child {display:none;}
-    tbody tr th {display:none;}
+    /* העלמה מוחלטת של העמודה הראשונה (האינדקס/Serial) */
+    table th:nth-child(1), 
+    table td:nth-child(1) {
+        display: none !important;
+    }
 
-    /* 2. יישור כל הכותרות למרכז */
+    /* יישור כל הכותרות הנותרות למרכז */
     th {
         text-align: center !important;
-        background-color: #f0f2f6;
+        background-color: rgba(128, 128, 128, 0.1) !important;
+        color: inherit !important;
     }
 
-    /* 3. יישור עמודת השם לימין (עמודה 3 כולל האינדקס המוסתר) */
-    td:nth-child(3) {
-        text-align: right !important;
-        direction: rtl;
-        padding-right: 20px !important;
-    }
-
-    /* 4. יישור עמודת הנקודות למרכז (עמודה 2) */
+    /* עמודה 2 (נקודות) - מרכז */
     td:nth-child(2) {
         text-align: center !important;
+        width: 30%;
     }
 
-    /* עיצוב כללי לטבלה שתתפרס על כל הרוחב */
+    /* עמודה 3 (שם) - ימין */
+    td:nth-child(3) {
+        text-align: right !important;
+        padding-right: 20px !important;
+        width: 70%;
+    }
+
+    /* הגדלת הטקסט ופריסה מלאה */
     table {
-        width: 100%;
+        width: 100% !important;
         font-size: 18px;
     }
     </style>
@@ -90,11 +91,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 2. הכנת הנתונים (שם ואז נקודות)
+# --- 2. הכנת הנתונים (הסדר חשוב!) ---
+# עמודה 1 (שתהיה מוסתרת): אינדקס (אוטומטי)
+# עמודה 2: נקודות
+# עמודה 3: שם
 df_display = df[['Points', 'Name']].copy()
 df_display.columns = ["נקודות", "שם"]
 
-# 3. הצגת הטבלה הסטטית
+# --- 3. הצגת הכותרת והטבלה ---
+st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
+
+# הצגת הטבלה (ה-CSS למעלה כבר יטפל בהסתרת האינדקס)
 st.table(df_display.style.map(style_points, subset=['נקודות']))
 
 st.divider()
