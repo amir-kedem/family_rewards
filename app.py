@@ -48,60 +48,53 @@ with col_val:
 
 st.progress(min(total_points / FAMILY_GOAL, 1.0))
 
-# --- כותרת הטבלה (ממורכזת דרך CSS) ---
+## --- 1. כותרת אחת ויחידה (ממורכזת) ---
 st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
 
-# --- 1. הזרקת CSS "אטומי" להעלמת האינדקס ויישור מושלם ---
+# --- 2. הזרקת CSS "חכם" שלא מחביא עמודות נתונים ---
 st.markdown(
     """
     <style>
-    /* העלמה מוחלטת של העמודה הראשונה (האינדקס/Serial) */
-    table th:nth-child(1), 
-    table td:nth-child(1) {
-        display: none !important;
-    }
+    /* העלמת עמודת האינדקס (המספרים האפורים) בלי לפגוע בנתונים */
+    table thead th:first-child { display: none !important; }
+    table tbody th { display: none !important; }
 
-    /* יישור כל הכותרות הנותרות למרכז */
-    th {
+    /* יישור כותרות למרכז */
+    table thead th {
         text-align: center !important;
         background-color: rgba(128, 128, 128, 0.1) !important;
         color: inherit !important;
     }
 
-    /* עמודה 2 (נקודות) - מרכז */
-    td:nth-child(2) {
-        text-align: center !important;
-        width: 30%;
-    }
-
-    /* עמודה 3 (שם) - ימין */
-    td:nth-child(3) {
+    /* עמודה 1 (שם) - יישור לימין */
+    table tbody td:nth-of-type(1) {
         text-align: right !important;
         padding-right: 20px !important;
-        width: 70%;
+        width: 60%;
     }
 
-    /* הגדלת הטקסט ופריסה מלאה */
+    /* עמודה 2 (נקודות) - יישור למרכז */
+    table tbody td:nth-of-type(2) {
+        text-align: center !important;
+        width: 40%;
+    }
+
+    /* התאמה לרוחב מלא ופונט קריא */
     table {
         width: 100% !important;
         font-size: 18px;
+        border-collapse: collapse;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- 2. הכנת הנתונים (הסדר חשוב!) ---
-# עמודה 1 (שתהיה מוסתרת): אינדקס (אוטומטי)
-# עמודה 2: נקודות
-# עמודה 3: שם
-df_display = df[['Points', 'Name']].copy()
-df_display.columns = ["נקודות", "שם"]
+# --- 3. הכנת הנתונים (סדר עמודות: שם ואז נקודות) ---
+df_display = df[['Name', 'Points']].copy()
+df_display.columns = ["שם", "נקודות"]
 
-# --- 3. הצגת הכותרת והטבלה ---
-st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
-
-# הצגת הטבלה (ה-CSS למעלה כבר יטפל בהסתרת האינדקס)
+# --- 4. הצגת הטבלה ---
 st.table(df_display.style.map(style_points, subset=['נקודות']))
 
 st.divider()
