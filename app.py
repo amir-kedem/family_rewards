@@ -1,13 +1,17 @@
 import pandas as pd
 import streamlit as st
+from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_gsheets import GSheetsConnection
+from urllib.parse import urlparse
 
 st.set_page_config(page_title="הבית המשותף שלנו", page_icon="🏠", layout="centered")
 
 SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
+SERVICE_ACCOUNT_EMAIL = st.secrets["connections"]["gsheets"].get("client_email", "")
 ADMIN_PASSWORD = "220911"
 ADMIN_LABEL = "הורה"
 CHILD_USERS = ["גוני", "נווה"]
+DEFAULT_MEMBERS = ["גוני", "נווה", "מורית", "אמיר"]
 LOGIN_OPTIONS = [*CHILD_USERS, ADMIN_LABEL]
 FAMILY_GOAL = 1000
 
@@ -72,6 +76,23 @@ def clean_members_df(df: pd.DataFrame) -> pd.DataFrame:
     return members
 
 
+def build_members_template(existing_members: pd.DataFrame | None = None) -> pd.DataFrame:
+    if existing_members is None or existing_members.empty:
+        members = pd.DataFrame({"Name": DEFAULT_MEMBERS, "Points": [0] * len(DEFAULT_MEMBERS)})
+    else:
+        members = clean_members_df(existing_members)
+
+    for member_name in DEFAULT_MEMBERS:
+        if member_name not in members["Name"].tolist():
+            members = pd.concat(
+                [members, pd.DataFrame([{"Name": member_name, "Points": 0}])],
+                ignore_index=True,
+            )
+
+    members = members.drop_duplicates(subset=["Name"], keep="first").reset_index(drop=True)
+    return clean_members_df(members)
+
+
 def clean_catalog_df(df: pd.DataFrame, value_column: str) -> pd.DataFrame:
     catalog = df.copy()
     if "Title" not in catalog.columns:
@@ -87,22 +108,73 @@ def clean_catalog_df(df: pd.DataFrame, value_column: str) -> pd.DataFrame:
     return catalog
 
 
+def extract_sheet_id(sheet_url: str) -> str:
+    try:
+        parts = [part for part in urlparse(sheet_url).path.split("/") if part]
+        if "d" in parts:
+            idx = parts.index("d")
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
+    except Exception:
+        pass
+    return "Unavailable"
+
+
+def render_sheet_diagnostics():
+    with st.expander("Diagnostics", expanded=True):
+        st.write("אם הגישה עדיין נכשלת, השווה את הערכים האלה בין המחשב המקומי ל-Streamlit Cloud.")
+        st.write("Service account email")
+        st.code(SERVICE_ACCOUNT_EMAIL or "Missing")
+        st.write("Spreadsheet URL")
+        st.code(SHEET_URL or "Missing")
+        st.write("Spreadsheet ID")
+        st.code(extract_sheet_id(SHEET_URL))
+
+
+def stop_for_sheet_error(exc: APIError, action: str):
+    status_code = getattr(getattr(exc, "response", None), "status_code", "Unknown")
+    if status_code in (401, 403):
+        st.error("אין גישה לקובץ Google Sheets שהוגדר לאפליקציה.")
+        st.write("יש לשתף את הגיליון עם חשבון השירות של האפליקציה בהרשאת Editor.")
+        if SERVICE_ACCOUNT_EMAIL:
+            st.code(SERVICE_ACCOUNT_EMAIL)
+        st.write("בנוסף, ודא שהערך `connections.gsheets.spreadsheet` ב-secrets מצביע על הקובץ הנכון.")
+    else:
+        st.error(f"שגיאת Google Sheets בזמן {action}.")
+        st.write(f"HTTP status: {status_code}")
+        st.exception(exc)
+    render_sheet_diagnostics()
+    st.stop()
+
+
 def read_worksheet(worksheet: str | int) -> pd.DataFrame:
-    return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet, ttl="0s")
+    try:
+        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet, ttl="0s")
+    except APIError as exc:
+        raise exc
 
 
 def write_worksheet(worksheet: str | int, data: pd.DataFrame):
-    conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=data)
+    try:
+        conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=data)
+    except APIError as exc:
+        stop_for_sheet_error(exc, f"עדכון הגיליון {worksheet}")
 
 
 def create_worksheet(worksheet: str, data: pd.DataFrame):
-    spreadsheet = conn.client._open_spreadsheet(spreadsheet=SHEET_URL)
+    try:
+        spreadsheet = conn.client._open_spreadsheet(spreadsheet=SHEET_URL)
+    except APIError as exc:
+        stop_for_sheet_error(exc, "פתיחת הגיליון")
     try:
         spreadsheet.worksheet(worksheet)
-    except Exception:
+    except WorksheetNotFound:
         rows = max(len(data) + 5, 20)
         cols = max(len(data.columns) + 2, 4)
-        spreadsheet.add_worksheet(title=worksheet, rows=rows, cols=cols)
+        try:
+            spreadsheet.add_worksheet(title=worksheet, rows=rows, cols=cols)
+        except APIError as exc:
+            stop_for_sheet_error(exc, f"יצירת הלשונית {worksheet}")
     write_worksheet(worksheet, data)
 
 
@@ -116,15 +188,19 @@ def upsert_named_worksheet(worksheet: str, data: pd.DataFrame):
 def get_members_data() -> tuple[pd.DataFrame, str | int]:
     try:
         members = clean_members_df(read_worksheet(MEMBERS_WORKSHEET))
-        return members, MEMBERS_WORKSHEET
+        if not members.empty:
+            return members, MEMBERS_WORKSHEET
     except Exception:
-        try:
-            members = clean_members_df(read_worksheet(0))
+        pass
+
+    try:
+        members = clean_members_df(read_worksheet(0))
+        if not members.empty:
             return members, 0
-        except Exception:
-            default_members = pd.DataFrame({"Name": CHILD_USERS, "Points": [0] * len(CHILD_USERS)})
-            create_worksheet(MEMBERS_WORKSHEET, default_members)
-            return clean_members_df(default_members), MEMBERS_WORKSHEET
+    except Exception:
+        pass
+
+    return build_members_template(), MEMBERS_WORKSHEET
 
 
 def get_or_create_catalog(worksheet: str, value_column: str, defaults: pd.DataFrame) -> pd.DataFrame:
@@ -175,9 +251,7 @@ def reset_login_state():
 
 
 def load_starter_template(members_df: pd.DataFrame):
-    starter_members = clean_members_df(members_df)
-    if starter_members.empty:
-        starter_members = pd.DataFrame({"Name": CHILD_USERS, "Points": [0] * len(CHILD_USERS)})
+    starter_members = build_members_template(members_df)
 
     upsert_named_worksheet(MEMBERS_WORKSHEET, starter_members)
     upsert_named_worksheet(CHORES_WORKSHEET, DEFAULT_CHORES)
