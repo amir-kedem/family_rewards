@@ -48,38 +48,34 @@ with col_val:
 
 st.progress(min(total_points / FAMILY_GOAL, 1.0))
 
-## --- 1. כותרת אחת ויחידה (ממורכזת) ---
+# --- 1. כותרת ממורכזת ---
 st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
 
-# --- 2. הזרקת CSS "חכם" שלא מחביא עמודות נתונים ---
+# --- 2. הזרקת CSS פשוט ומדויק (ללא הסתרת עמודות ב-CSS) ---
 st.markdown(
     """
     <style>
-    /* העלמת עמודת האינדקס (המספרים האפורים) בלי לפגוע בנתונים */
-    table thead th:first-child { display: none !important; }
-    table tbody th { display: none !important; }
-
-    /* יישור כותרות למרכז */
-    table thead th {
+    /* עיצוב כללי לכותרות */
+    th {
         text-align: center !important;
         background-color: rgba(128, 128, 128, 0.1) !important;
         color: inherit !important;
+        padding: 10px !important;
     }
-
+    
     /* עמודה 1 (שם) - יישור לימין */
-    table tbody td:nth-of-type(1) {
+    td:nth-child(1) {
         text-align: right !important;
         padding-right: 20px !important;
         width: 60%;
     }
-
+    
     /* עמודה 2 (נקודות) - יישור למרכז */
-    table tbody td:nth-of-type(2) {
+    td:nth-child(2) {
         text-align: center !important;
         width: 40%;
     }
 
-    /* התאמה לרוחב מלא ופונט קריא */
     table {
         width: 100% !important;
         font-size: 18px;
@@ -90,12 +86,18 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- 3. הכנת הנתונים (סדר עמודות: שם ואז נקודות) ---
+# --- 3. הכנת הנתונים (שם ואז נקודות) ---
+# אנחנו מוודאים שהסדר הוא בדיוק זה: עמודה ראשונה שם, שנייה נקודות
 df_display = df[['Name', 'Points']].copy()
 df_display.columns = ["שם", "נקודות"]
 
-# --- 4. הצגת הטבלה ---
-st.table(df_display.style.map(style_points, subset=['נקודות']))
+# --- 4. הצגת הטבלה עם העלמת אינדקס מובנית ---
+# ה-hide(axis='index') דואג שהמספרים (0,1,2,3) לא ייווצרו בכלל
+st.table(
+    df_display.style
+    .map(style_points, subset=['נקודות'])
+    .hide(axis='index')
+)
 
 st.divider()
 
