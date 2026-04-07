@@ -14,6 +14,7 @@ CHILD_USERS = ["גוני", "נווה"]
 DEFAULT_MEMBERS = ["גוני", "נווה", "מורית", "אמיר"]
 LOGIN_OPTIONS = [*CHILD_USERS, ADMIN_LABEL]
 FAMILY_GOAL = 1000
+READ_TTL = "60s"
 
 MEMBERS_WORKSHEET = "Members"
 CHORES_WORKSHEET = "Chores"
@@ -52,6 +53,7 @@ def init_session_state():
         "pending_delete": None,
         "show_add_dialog": None,
         "admin_password_input": "",
+        "success_message": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -149,14 +151,19 @@ def stop_for_sheet_error(exc: APIError, action: str):
 
 def read_worksheet(worksheet: str | int) -> pd.DataFrame:
     try:
-        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet, ttl="0s")
+        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet, ttl=READ_TTL)
     except APIError as exc:
         raise exc
+
+
+def clear_sheet_cache():
+    st.cache_data.clear()
 
 
 def write_worksheet(worksheet: str | int, data: pd.DataFrame):
     try:
         conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=data)
+        clear_sheet_cache()
     except APIError as exc:
         stop_for_sheet_error(exc, f"עדכון הגיליון {worksheet}")
 
@@ -190,6 +197,10 @@ def get_members_data() -> tuple[pd.DataFrame, str | int]:
         members = clean_members_df(read_worksheet(MEMBERS_WORKSHEET))
         if not members.empty:
             return members, MEMBERS_WORKSHEET
+    except APIError as exc:
+        stop_for_sheet_error(exc, f"קריאת הגיליון {MEMBERS_WORKSHEET}")
+    except WorksheetNotFound:
+        pass
     except Exception:
         pass
 
@@ -197,6 +208,8 @@ def get_members_data() -> tuple[pd.DataFrame, str | int]:
         members = clean_members_df(read_worksheet(0))
         if not members.empty:
             return members, 0
+    except APIError as exc:
+        stop_for_sheet_error(exc, "קריאת הגיליון הראשי")
     except Exception:
         pass
 
@@ -210,7 +223,9 @@ def get_or_create_catalog(worksheet: str, value_column: str, defaults: pd.DataFr
             write_worksheet(worksheet, defaults)
             return clean_catalog_df(defaults, value_column)
         return catalog
-    except Exception:
+    except APIError as exc:
+        stop_for_sheet_error(exc, f"קריאת הגיליון {worksheet}")
+    except WorksheetNotFound:
         create_worksheet(worksheet, defaults)
         return clean_catalog_df(defaults, value_column)
 
@@ -248,6 +263,12 @@ def reset_login_state():
     st.session_state.admin_password_input = ""
     st.session_state.pending_delete = None
     st.session_state.show_add_dialog = None
+    st.session_state.success_message = None
+
+
+def show_success_popup(message: str = "פעולה עודכנה"):
+    st.session_state.success_message = message
+    st.rerun()
 
 
 def load_starter_template(members_df: pd.DataFrame):
@@ -328,8 +349,7 @@ def render_undo(members_df: pd.DataFrame, members_target: str | int):
             members_df.at[idx, "Points"] -= last_points
             write_worksheet(members_target, members_df)
             st.session_state.last_action = None
-            st.success("הפעולה בוטלה.")
-            st.rerun()
+            show_success_popup("פעולה עודכנה")
 
 
 def render_anger_tab(members_df: pd.DataFrame, members_target: str | int, member_options: list[str], is_admin: bool):
@@ -347,7 +367,7 @@ def render_anger_tab(members_df: pd.DataFrame, members_target: str | int, member
         earned = points_map[level] + (10 if bonus else 0)
         update_member_points(members_df, members_target, selected_user, earned, "הוספת נקודות (כעס)")
         st.balloons()
-        st.rerun()
+        show_success_popup("פעולה עודכנה")
 
 
 def render_chores_tab(
@@ -378,7 +398,7 @@ def render_chores_tab(
     if st.button("אישור ביצוע מטלה 🧹", key="btn_task"):
         earned = int(task[1])
         update_member_points(members_df, members_target, selected_user, earned, f"ביצוע {task[0]}")
-        st.rerun()
+        show_success_popup("פעולה עודכנה")
 
 
 def render_prizes_tab(members_df: pd.DataFrame, members_target: str | int, prizes_df: pd.DataFrame, member_options: list[str]):
@@ -404,8 +424,7 @@ def render_prizes_tab(members_df: pd.DataFrame, members_target: str | int, prize
     if st.button(f"אשר מימוש: {reward[0]}", disabled=not can_afford, type="primary", key="btn_reward"):
         cost = int(reward[1])
         update_member_points(members_df, members_target, selected_user, -cost, f"מימוש {reward[0]}")
-        st.success("תהנו!")
-        st.rerun()
+        show_success_popup("פעולה עודכנה")
 
 
 def render_catalog_manager(kind: str, catalog_df: pd.DataFrame):
@@ -442,8 +461,7 @@ def render_starter_template_tab(members_df: pd.DataFrame):
     confirm = st.checkbox("אני מאשר לטעון את תבנית ההתחלה לגיליון", key="confirm_starter_template")
     if st.button("טעינת תבנית התחלתית", type="primary", disabled=not confirm, key="load_starter_template"):
         load_starter_template(members_df)
-        st.success("תבנית ההתחלה נטענה לגוגל שיטס.")
-        st.rerun()
+        show_success_popup("פעולה עודכנה")
 
 
 @st.dialog("הוספת פריט")
@@ -486,8 +504,7 @@ def add_item_dialog(kind: str):
         )
         save_catalog(config["worksheet"], config["value_column"], updated_df)
         st.session_state.show_add_dialog = None
-        st.success("הפריט נוסף.")
-        st.rerun()
+        show_success_popup("פעולה עודכנה")
 
 
 @st.dialog("אישור מחיקה")
@@ -507,13 +524,20 @@ def confirm_delete_dialog(kind: str, row_index: int, title: str):
                 updated_df = catalog_df.drop(index=row_index).reset_index(drop=True)
                 save_catalog(config["worksheet"], config["value_column"], updated_df)
             st.session_state.pending_delete = None
-            st.success("הפריט נמחק.")
-            st.rerun()
+            show_success_popup("פעולה עודכנה")
 
     with col_cancel:
         if st.button("ביטול", key=f"cancel_delete_{kind}_{row_index}"):
             st.session_state.pending_delete = None
             st.rerun()
+
+
+@st.dialog("עדכון")
+def success_dialog(message: str):
+    st.write(message)
+    if st.button("OK", type="primary", key="close_success_dialog"):
+        st.session_state.success_message = None
+        st.rerun()
 
 
 init_session_state()
@@ -531,6 +555,7 @@ with col_title:
     st.write(f"#### 🎯 יעד משפחתי: {total_points} / {FAMILY_GOAL}")
 with col_val:
     if st.button("🔄 רענן נתונים"):
+        clear_sheet_cache()
         st.rerun()
 
 st.progress(min(total_points / FAMILY_GOAL, 1.0))
@@ -578,9 +603,9 @@ if st.session_state.role is None:
 else:
     render_header()
     is_admin = st.session_state.role == "admin"
+    render_undo(members_df, members_target)
 
     if is_admin:
-        render_undo(members_df, members_target)
         action_tabs = st.tabs(
             [
                 "⚡ התגברות על כעס",
@@ -628,3 +653,6 @@ if st.session_state.pending_delete:
         st.session_state.pending_delete["row_index"],
         st.session_state.pending_delete["title"],
     )
+
+if st.session_state.success_message:
+    success_dialog(st.session_state.success_message)
