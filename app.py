@@ -5,130 +5,192 @@ from streamlit_gsheets import GSheetsConnection
 # --- הגדרות דף ---
 st.set_page_config(page_title="הבית המשותף שלנו", page_icon="🏠", layout="centered")
 
-# --- הגדרות קבועות (ניתן לערוך בקלות) ---
+# משיכת הקישור מה-Secrets
+SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
 ADMIN_PASSWORD = "1234"
 FAMILY_GOAL = 1000
 
-TASKS = [
-    ("טיול ארוך לכלב", 25),
-    ("טיול קצר לכלב", 10),
-    ("החלפת מצעים", 10),
-    ("שאיבת רצפה", 30),
-    ("שאיבת שטיח", 15),
-    ("משימה לימודית יומית (שיעורים/תרגול)", 20),
-    ("משימה לימודית מורחבת (מבחן/עבודה)", 40),
-    ("קריאת ספר (30 דקות)", 15)
-]
-
-REWARDS = [
-    ("גלידה בכלבו", 50),
-    ("תוספת זמן מסך (30 דק')", 40),
-    ("תוספת זמן מסך (שעה)", 80),
-    ("מנוחה בבית בזמן צהרון", 150)
-]
+# --- אתחול Session State ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'last_action' not in st.session_state:
+    st.session_state.last_action = None
 
 # --- חיבור לנתונים ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
-    # קריאת הנתונים וניקוי שורות ריקות אם יש
-    data = conn.read(ttl="0s")
-    return data.dropna(subset=['Name'])
+    df = conn.read(spreadsheet=SHEET_URL, ttl="0s").dropna(subset=['Name'])
+    # המרה למספרים שלמים וניקוי נתונים
+    df['Points'] = pd.to_numeric(df['Points'], errors='coerce').fillna(0).astype(int)
+    return df
 
 df = get_data()
 
-# --- פונקציות עיצוב (Pandas Styling) ---
+# --- פונקציית עיצוב (מתוקנת למניעת TypeError) ---
 def style_points(val):
-    """צובע ניקוד נמוך מאוד באדום"""
-    color = 'red' if val < 20 else 'black'
-    return f'color: {color}; font-weight: bold'
+    try:
+        # המרה לציפה לצורך השוואה בטוחה
+        num_val = float(val)
+        color = 'red' if num_val < 20 else 'black'
+        return f'color: {color}; font-weight: bold'
+    except (ValueError, TypeError):
+        return 'color: black'
 
-# --- ממשק משתמש ראשי ---
+# --- ממשק ראשי ---
 st.title("🏠 הבית המשותף שלנו")
-st.markdown("### מערכת לחיזוק חיובי וערבות הדדית")
 
-# הצגת מד התקדמות משפחתי
-total_points = df['Points'].sum()
-progress = min(total_points / FAMILY_GOAL, 1.0)
-st.write(f"#### 🎯 יעד משפחתי: {total_points} / {FAMILY_GOAL}")
-st.progress(progress)
-if progress >= 1.0:
-    st.success("🎉 הגענו ליעד המשפחתי! זמן להחליט על הפרס המשותף!")
+# מד התקדמות משפחתי
+total_points = int(df['Points'].sum())
+col_title, col_val = st.columns([3, 1])
+with col_title:
+    st.write(f"#### 🎯 יעד משפחתי: {total_points} / {FAMILY_GOAL}")
+with col_val:
+    if st.button("🔄 רענן נתונים"):
+        st.rerun()
+
+st.progress(min(total_points / FAMILY_GOAL, 1.0))
+
+# --- כותרת הטבלה (ממורכזת דרך CSS) ---
+st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
+
+# --- הזרקת ה-CSS הסופי (מעלים אינדקס ומיישר עמודות) ---
+st.markdown(
+    """
+    <style>
+    /* 1. העלמת עמודת האינדקס (המספרים משמאל) */
+    thead tr th:first-child {display:none;}
+    tbody tr th {display:none;}
+
+    /* 2. יישור כל הכותרות למרכז */
+    th {
+        text-align: center !important;
+        background-color: #f0f2f6;
+    }
+
+    /* 3. יישור עמודת השם לימין (עמודה 3 כולל האינדקס המוסתר) */
+    td:nth-child(3) {
+        text-align: right !important;
+        direction: rtl;
+        padding-right: 20px !important;
+    }
+
+    /* 4. יישור עמודת הנקודות למרכז (עמודה 2) */
+    td:nth-child(2) {
+        text-align: center !important;
+    }
+
+    /* עיצוב כללי לטבלה שתתפרס על כל הרוחב */
+    table {
+        width: 100%;
+        font-size: 18px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# 2. הכנת הנתונים (שם ואז נקודות)
+df_display = df[['Points', 'Name']].copy()
+df_display.columns = ["נקודות", "שם"]
+
+# 3. הצגת הטבלה הסטטית
+st.table(df_display.style.map(style_points, subset=['נקודות']))
 
 st.divider()
 
-# הצגת טבלת הניקוד המעוצבת
-st.write("### מצב הנקודות הנוכחי")
-styled_df = df.style.map(style_points, subset=['Points'])
-st.dataframe(styled_df, use_container_width=True)
+# --- אזור ניהול ועדכון (במסך הראשי) ---
+if not st.session_state.authenticated:
+    st.subheader("🔐 כניסת הורים לעדכון")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        pw_input = st.text_input("סיסמה", type="password", label_visibility="collapsed", placeholder="הכנס סיסמה...")
+    with col2:
+        # תמיכה גם בכפתור וגם ב-Enter
+        if st.button("כניסה למערכת", use_container_width=True) or (pw_input == ADMIN_PASSWORD and pw_input != ""):
+            if pw_input == ADMIN_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            elif pw_input != "":
+                st.error("סיסמה שגויה")
+else:
+    # מצב אדמין פעיל
+    col_header, col_logout = st.columns([4, 1])
+    with col_header:
+        st.subheader("⚙️ לוח בקרה להורים")
+    with col_logout:
+        if st.button("יציאה", help="ניתוק מצב עריכה"):
+            st.session_state.authenticated = False
+            st.rerun()
 
-st.divider()
-
-# --- אזור ניהול (Sidebar) ---
-st.sidebar.title("🔐 אזור הורים")
-password = st.sidebar.text_input("הכנס סיסמה לעדכון", type="password")
-
-if password == ADMIN_PASSWORD:
-    st.sidebar.success("מצב עריכה פעיל")
-    
-    action_type = st.radio("מה ברצונך לעשות?", ["דיווח על אירוע/מטלה", "מימוש פרס"])
-
-    if action_type == "דיווח על אירוע/מטלה":
-        with st.form("action_form"):
-            user = st.selectbox("מי הילד?", df['Name'].tolist())
-            category = st.selectbox("קטגוריה", ["ניהול כעס", "ביצוע מטלה / למידה"])
-            
-            earned_points = 0
-            details = ""
-
-            if category == "ניהול כעס":
-                level = st.select_slider("עוצמת ההתקף שהיה", options=["קטן", "בינוני", "גדול"])
-                bonus = st.checkbox("שימוש בשיטת פריקה חיובית (בונוס +10)")
-                points_map = {"קטן": 10, "בינוני": 20, "גדול": 40}
-                earned_points = points_map[level] + (10 if bonus else 0)
-                details = f"התגברות על כעס {level}"
-
-            else: # מטלה או למידה
-                task_choice = st.selectbox("בחר משימה", TASKS, format_func=lambda x: f"{x[0]} ({x[1]} נק')")
-                earned_points = task_choice[1]
-                details = task_choice[0]
-
-            if st.form_submit_button("אישור ועדכון נקודות"):
-                idx = df[df['Name'] == user].index[0]
-                df.at[idx, 'Points'] += earned_points
-                conn.update(data=df)
-                st.balloons()
-                st.success(f"כל הכבוד {user}! נוספו {earned_points} נקודות.")
+    # מנגנון Undo
+    if st.session_state.last_action:
+        last_user, last_points, last_type = st.session_state.last_action
+        with st.warning(f"פעולה אחרונה: {last_type} ל-{last_user} ({last_points} נק')"):
+            if st.button("⏮️ בטל פעולה אחרונה (Undo)"):
+                idx = df[df['Name'] == last_user].index[0]
+                df.at[idx, 'Points'] -= last_points
+                conn.update(spreadsheet=SHEET_URL, data=df)
+                st.session_state.last_action = None
+                st.success("הפעולה בוטלה!")
                 st.rerun()
 
-    elif action_type == "מימוש פרס":
-        with st.form("reward_form"):
-            user = st.selectbox("מי המממש?", df['Name'].tolist())
-            current_p = df.loc[df['Name'] == user, 'Points'].values[0]
-            
-            # יצירת רשימת פרסים חכמה עם אינדיקציה ויזואלית
-            reward_labels = []
-            for name, cost in REWARDS:
-                if current_p >= cost:
-                    reward_labels.append(f"✅ {name} ({cost} נק')")
-                else:
-                    reward_labels.append(f"❌ {name} ({cost} נק') - חסר {cost - current_p}")
-            
-            selected_label = st.selectbox("בחר פרס", reward_labels)
-            
-            if st.form_submit_button("אשר מימוש פרס"):
-                # חילוץ העלות מהטקסט הנבחר
-                selected_name = selected_label.split(" (")[0].replace("✅ ", "").replace("❌ ", "")
-                cost = next(c for n, c in REWARDS if n == selected_name)
-                
-                if current_p >= cost:
-                    idx = df[df['Name'] == user].index[0]
-                    df.at[idx, 'Points'] -= cost
-                    conn.update(data=df)
-                    st.success(f"תהנה! {selected_name} מומש. ירדו {cost} נקודות.")
-                    st.rerun()
-                else:
-                    st.error("אין מספיק נקודות לפעולה זו!")
-else:
-    st.sidebar.info("הכנס סיסמה כדי לעדכן נקודות או לממש פרסים.")
-    st.warning("מצב צפייה בלבד: לא ניתן לבצע שינויים.")
+    # בחירת פעולה בטאבים
+    tab1, tab2, tab3 = st.tabs(["⚡ התגברות על כעס", "🧹 מטלה / למידה", "🎁 מימוש פרס"])
+    members_list = df['Name'].tolist()
+
+    # --- טאב 1: כעס ---
+    with tab1:
+        user = st.radio("מי הגיבור?", members_list, key="anger_user", horizontal=True)
+        level = st.select_slider("עוצמת ההתקף שהיה", options=["קטן", "בינוני", "גדול"], key="anger_level")
+        bonus = st.checkbox("שימוש בשיטת פריקה (אסלה/כרית/פוף) +10 בונוס")
+        
+        if st.button("אישור וקבלת נקודות ✅", key="btn_anger"):
+            points_map = {"קטן": 10, "בינוני": 20, "גדול": 40}
+            earned = points_map[level] + (10 if bonus else 0)
+            idx = df[df['Name'] == user].index[0]
+            df.at[idx, 'Points'] += earned
+            conn.update(spreadsheet=SHEET_URL, data=df)
+            st.session_state.last_action = (user, earned, "הוספת נקודות (כעס)")
+            st.balloons()
+            st.rerun()
+
+    # --- טאב 2: מטלות ---
+    with tab2:
+        user_t = st.radio("מי ביצע?", members_list, key="task_user", horizontal=True)
+        task = st.selectbox("בחר מטלה", [
+            ("טיול ארוך לכלב", 25), ("טיול קצר לכלב", 10), ("החלפת מצעים", 10),
+            ("שאיבת רצפה", 30), ("משימה לימודית יומית", 20),
+            ("משימה לימודית מורחבת", 40), ("קריאת ספר (30 דק')", 15)
+        ], format_func=lambda x: f"{x[0]} ({int(x[1])} נק')")
+        
+        if st.button("אישור ביצוע מטלה 🧹", key="btn_task"):
+            earned = int(task[1])
+            idx = df[df['Name'] == user_t].index[0]
+            df.at[idx, 'Points'] += earned
+            conn.update(spreadsheet=SHEET_URL, data=df)
+            st.session_state.last_action = (user_t, earned, f"ביצוע {task[0]}")
+            st.rerun()
+
+    # --- טאב 3: פרסים ---
+    with tab3:
+        user_r = st.radio("מי מממש?", members_list, key="reward_user", horizontal=True)
+        reward = st.selectbox("בחר פרס", [
+            ("גלידה בכלבו", 50), ("תוספת זמן מסך (30 דק')", 40),
+            ("תוספת זמן מסך (שעה)", 80), ("מנוחה בבית במקום צהרון", 150)
+        ], format_func=lambda x: f"{x[0]} ({int(x[1])} נק')")
+        
+        current_points = int(df.loc[df['Name'] == user_r, 'Points'].values[0])
+        can_afford = current_points >= reward[1]
+        
+        if not can_afford:
+            st.error(f"חסרות ל-{user_r} עוד {int(reward[1] - current_points)} נקודות לפרס זה.")
+        
+        if st.button(f"אשר מימוש: {reward[0]}", disabled=not can_afford, type="primary"):
+            cost = int(reward[1])
+            idx = df[df['Name'] == user_r].index[0]
+            df.at[idx, 'Points'] -= cost
+            conn.update(spreadsheet=SHEET_URL, data=df)
+            st.session_state.last_action = (user_r, -cost, f"מימוש {reward[0]}")
+            st.success("תהנו!")
+            st.rerun()
