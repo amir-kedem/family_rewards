@@ -59,7 +59,7 @@ st.divider()
 
 # הצגת טבלת הניקוד המעוצבת
 st.write("### מצב הנקודות הנוכחי")
-styled_df = df.style.applymap(style_points, subset=['Points'])
+styled_df = df.style.map(style_points, subset=['Points'])
 st.dataframe(styled_df, use_container_width=True)
 
 st.divider()
