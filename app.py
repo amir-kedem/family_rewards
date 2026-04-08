@@ -15,13 +15,16 @@ ADMIN_LABEL = "הורה"
 CHILD_USERS = ["גוני", "נווה"]
 DEFAULT_MEMBERS = ["גוני", "נווה", "מורית", "אמיר"]
 LOGIN_OPTIONS = [*CHILD_USERS, ADMIN_LABEL]
-FAMILY_GOAL = 1000
+FAMILY_GOAL = 10000
 READ_TTL = "60s"
 
 MEMBERS_WORKSHEET = "Members"
 CHORES_WORKSHEET = "Chores"
+BEHAVIOR_WORKSHEET = "Behavior"
+EDUCATION_WORKSHEET = "Education"
 PRIZES_WORKSHEET = "Prizes"
 HISTORY_WORKSHEET = "History"
+MONTHLY_LEDGER_WORKSHEET = "MonthlyLedger"
 HISTORY_RETENTION_DAYS = 8
 LOCAL_TIMEZONE = ZoneInfo("Asia/Jerusalem")
 
@@ -46,7 +49,10 @@ DEFAULT_PRIZES = pd.DataFrame(
     ]
 )
 
+EMPTY_TASKS = pd.DataFrame(columns=["Title", "Points"])
+
 EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "Timestamp"])
+EMPTY_MONTHLY_LEDGER = pd.DataFrame(columns=["Month", "Date", "Time", "User", "Action", "Points", "Timestamp"])
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -60,6 +66,7 @@ def init_session_state():
         "pending_delete": None,
         "pending_child_task": None,
         "pending_clear_history": False,
+        "pending_edit": None,
         "show_add_dialog": None,
         "admin_password_input": "",
         "success_message": None,
@@ -136,6 +143,25 @@ def clean_history_df(df: pd.DataFrame) -> pd.DataFrame:
     history["Time"] = history["Timestamp"].dt.strftime("%H:%M:%S")
     history["Timestamp"] = history["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
     return history
+
+
+def clean_monthly_ledger_df(df: pd.DataFrame) -> pd.DataFrame:
+    ledger = df.copy()
+    for column in ["Month", "Date", "Time", "User", "Action", "Points", "Timestamp"]:
+        if column not in ledger.columns:
+            ledger[column] = ""
+
+    ledger = ledger[["Month", "Date", "Time", "User", "Action", "Points", "Timestamp"]].dropna(how="all")
+    ledger["User"] = ledger["User"].astype(str).str.strip()
+    ledger["Action"] = ledger["Action"].astype(str).str.strip()
+    ledger["Points"] = pd.to_numeric(ledger["Points"], errors="coerce").fillna(0).astype(int)
+    ledger["Timestamp"] = pd.to_datetime(ledger["Timestamp"], errors="coerce")
+    ledger = ledger.dropna(subset=["Timestamp"]).sort_values(by="Timestamp", ascending=False, kind="stable").reset_index(drop=True)
+    ledger["Month"] = ledger["Timestamp"].dt.strftime("%Y-%m")
+    ledger["Date"] = ledger["Timestamp"].dt.strftime("%Y-%m-%d")
+    ledger["Time"] = ledger["Timestamp"].dt.strftime("%H:%M:%S")
+    ledger["Timestamp"] = ledger["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    return ledger
 
 
 def extract_sheet_id(sheet_url: str) -> str:
@@ -273,6 +299,16 @@ def get_history_data() -> pd.DataFrame:
         return EMPTY_HISTORY.copy()
 
 
+def get_monthly_ledger_data() -> pd.DataFrame:
+    try:
+        return clean_monthly_ledger_df(read_worksheet(MONTHLY_LEDGER_WORKSHEET))
+    except APIError as exc:
+        stop_for_sheet_error(exc, f"קריאת הגיליון {MONTHLY_LEDGER_WORKSHEET}")
+    except WorksheetNotFound:
+        create_worksheet(MONTHLY_LEDGER_WORKSHEET, EMPTY_MONTHLY_LEDGER)
+        return EMPTY_MONTHLY_LEDGER.copy()
+
+
 def append_history_entry(user_name: str, action_label: str, points_delta: int):
     now = datetime.now(LOCAL_TIMEZONE)
     cutoff = pd.Timestamp(now - timedelta(days=HISTORY_RETENTION_DAYS)).tz_localize(None)
@@ -301,6 +337,39 @@ def append_history_entry(user_name: str, action_label: str, points_delta: int):
     write_worksheet(HISTORY_WORKSHEET, updated_history)
 
 
+def append_monthly_ledger_entry(user_name: str, action_label: str, points_delta: int):
+    now = datetime.now(LOCAL_TIMEZONE)
+    ledger_df = get_monthly_ledger_data()
+    new_entry = pd.DataFrame(
+        [
+            {
+                "Month": now.strftime("%Y-%m"),
+                "Date": now.strftime("%Y-%m-%d"),
+                "Time": now.strftime("%H:%M:%S"),
+                "User": user_name,
+                "Action": action_label,
+                "Points": int(points_delta),
+                "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        ]
+    )
+    updated_ledger = pd.concat([new_entry, ledger_df], ignore_index=True)
+    write_worksheet(MONTHLY_LEDGER_WORKSHEET, updated_ledger)
+
+
+def get_monthly_points_total() -> int:
+    ledger_df = get_monthly_ledger_data()
+    if ledger_df.empty:
+        return 0
+
+    current_month = datetime.now(LOCAL_TIMEZONE).strftime("%Y-%m")
+    monthly_ledger = ledger_df[ledger_df["Month"].astype(str) == current_month].copy()
+    monthly_ledger = monthly_ledger[~monthly_ledger["Action"].astype(str).str.contains("מימוש", na=False)]
+    if monthly_ledger.empty:
+        return 0
+    return int(monthly_ledger["Points"].sum())
+
+
 def get_catalog_config(kind: str) -> dict:
     if kind == "chores":
         return {
@@ -311,6 +380,35 @@ def get_catalog_config(kind: str) -> dict:
             "defaults": DEFAULT_CHORES,
             "dialog_title": "הוספת מטלה",
             "empty_message": "אין מטלות זמינות כרגע.",
+            "tab_label": "🧹 מטלות",
+            "child_label": "🧹 מטלות",
+            "action_prefix": "ביצוע",
+        }
+    if kind == "behavior":
+        return {
+            "worksheet": BEHAVIOR_WORKSHEET,
+            "value_column": "Points",
+            "value_label": "נקודות",
+            "title_label": "שם ההתנהגות",
+            "defaults": EMPTY_TASKS,
+            "dialog_title": "הוספת התנהגות חיובית",
+            "empty_message": "אין משימות התנהגות זמינות כרגע.",
+            "tab_label": "🌟 התנהגות חיובית",
+            "child_label": "🌟 התנהגות חיובית",
+            "action_prefix": "ביצוע",
+        }
+    if kind == "education":
+        return {
+            "worksheet": EDUCATION_WORKSHEET,
+            "value_column": "Points",
+            "value_label": "נקודות",
+            "title_label": "שם המשימה",
+            "defaults": EMPTY_TASKS,
+            "dialog_title": "הוספת משימה לימודית",
+            "empty_message": "אין משימות לימוד זמינות כרגע.",
+            "tab_label": "📚 משימות לימוד",
+            "child_label": "📚 משימות לימוד",
+            "action_prefix": "ביצוע",
         }
     return {
         "worksheet": PRIZES_WORKSHEET,
@@ -320,6 +418,7 @@ def get_catalog_config(kind: str) -> dict:
         "defaults": DEFAULT_PRIZES,
         "dialog_title": "הוספת פרס",
         "empty_message": "אין פרסים זמינים כרגע.",
+        "tab_label": "🎁 מימוש פרס",
     }
 
 
@@ -330,6 +429,7 @@ def reset_login_state():
     st.session_state.pending_delete = None
     st.session_state.pending_child_task = None
     st.session_state.pending_clear_history = False
+    st.session_state.pending_edit = None
     st.session_state.show_add_dialog = None
     st.session_state.success_message = None
 
@@ -344,7 +444,11 @@ def load_starter_template(members_df: pd.DataFrame):
 
     upsert_named_worksheet(MEMBERS_WORKSHEET, starter_members)
     upsert_named_worksheet(CHORES_WORKSHEET, DEFAULT_CHORES)
+    upsert_named_worksheet(BEHAVIOR_WORKSHEET, EMPTY_TASKS)
+    upsert_named_worksheet(EDUCATION_WORKSHEET, EMPTY_TASKS)
     upsert_named_worksheet(PRIZES_WORKSHEET, DEFAULT_PRIZES)
+    upsert_named_worksheet(HISTORY_WORKSHEET, EMPTY_HISTORY)
+    upsert_named_worksheet(MONTHLY_LEDGER_WORKSHEET, EMPTY_MONTHLY_LEDGER)
 
 
 def update_member_points(
@@ -358,6 +462,7 @@ def update_member_points(
     members_df.at[idx, "Points"] += delta
     write_worksheet(members_target, members_df)
     append_history_entry(member_name, action_label, delta)
+    append_monthly_ledger_entry(member_name, action_label, delta)
     st.session_state.last_action = (member_name, delta, action_label)
 
 
@@ -418,6 +523,7 @@ def render_undo(members_df: pd.DataFrame, members_target: str | int):
             members_df.at[idx, "Points"] -= last_points
             write_worksheet(members_target, members_df)
             append_history_entry(last_user, f"ביטול: {last_type}", -last_points)
+            append_monthly_ledger_entry(last_user, f"ביטול: {last_type}", -last_points)
             st.session_state.last_action = None
             show_success_popup("פעולה עודכנה")
 
@@ -447,7 +553,7 @@ def get_child_task_layout(task_options: list[tuple[str, int]]) -> tuple[int, int
     return columns_count, button_height
 
 
-def render_child_task_buttons(task_options: list[tuple[str, int]], selected_user: str):
+def render_child_task_buttons(task_options: list[tuple[str, int]], selected_user: str, kind: str, action_prefix: str):
     columns_count, button_height = get_child_task_layout(task_options)
     st.markdown(
         f"""
@@ -470,45 +576,55 @@ def render_child_task_buttons(task_options: list[tuple[str, int]], selected_user
             task_title, task_points = task_options[option_idx]
             label = f"{task_title}\n{int(task_points)} נק'"
             with columns[col_idx]:
-                if st.button(label, key=f"child_task_btn_{option_idx}", use_container_width=True):
+                if st.button(label, key=f"child_task_btn_{kind}_{option_idx}", use_container_width=True):
                     st.session_state.pending_child_task = {
                         "user": selected_user,
                         "title": task_title,
                         "points": int(task_points),
+                        "action_prefix": action_prefix,
                     }
                     st.rerun()
 
 
-def render_chores_tab(
+def render_task_tab(
     members_df: pd.DataFrame,
     members_target: str | int,
-    chores_df: pd.DataFrame,
+    tasks_df: pd.DataFrame,
     member_options: list[str],
     is_admin: bool,
+    kind: str,
 ):
-    if chores_df.empty:
-        st.info("אין מטלות זמינות כרגע. הוסף מטלות במסך הניהול של ההורה.")
+    config = get_catalog_config(kind)
+
+    if tasks_df.empty:
+        st.info(config["empty_message"])
         return
 
     if is_admin:
-        selected_user = st.radio("מי ביצע?", member_options, key="task_user", horizontal=True)
-        task_options = list(chores_df.itertuples(index=False, name=None))
+        selected_user = st.radio("מי ביצע?", member_options, key=f"task_user_{kind}", horizontal=True)
+        task_options = list(tasks_df.itertuples(index=False, name=None))
         task = st.selectbox(
             "בחר מטלה",
             task_options,
-            key="task_choice",
+            key=f"task_choice_{kind}",
             format_func=lambda item: f"{item[0]} ({int(item[1])} נק')",
         )
 
-        if st.button("אישור ביצוע מטלה 🧹", key="btn_task"):
+        if st.button("אישור ביצוע מטלה 🧹", key=f"btn_task_{kind}"):
             earned = int(task[1])
-            update_member_points(members_df, members_target, selected_user, earned, f"ביצוע {task[0]}")
+            update_member_points(
+                members_df,
+                members_target,
+                selected_user,
+                earned,
+                f"{config['action_prefix']} {task[0]}",
+            )
             show_success_popup("פעולה עודכנה")
     else:
         selected_user = st.session_state.active_user
         st.info(f"הדיווח יירשם עבור {selected_user}")
-        task_options = list(chores_df.itertuples(index=False, name=None))
-        render_child_task_buttons(task_options, selected_user)
+        task_options = list(tasks_df.itertuples(index=False, name=None))
+        render_child_task_buttons(task_options, selected_user, kind, config["action_prefix"])
 
 
 def render_prizes_tab(members_df: pd.DataFrame, members_target: str | int, prizes_df: pd.DataFrame, member_options: list[str]):
@@ -539,7 +655,7 @@ def render_prizes_tab(members_df: pd.DataFrame, members_target: str | int, prize
 
 def render_catalog_manager(kind: str, catalog_df: pd.DataFrame):
     config = get_catalog_config(kind)
-    st.subheader(f"רשימת {'מטלות' if kind == 'chores' else 'פרסים'}")
+    st.subheader(config["tab_label"])
 
     if st.button(f"הוספת {'מטלה' if kind == 'chores' else 'פרס'}", key=f"open_add_{kind}", use_container_width=True):
         st.session_state.show_add_dialog = kind
@@ -549,11 +665,19 @@ def render_catalog_manager(kind: str, catalog_df: pd.DataFrame):
         return
 
     for row_index, row in catalog_df.reset_index(drop=True).iterrows():
-        col_title, col_value, col_delete = st.columns([4, 1, 1])
+        col_title, col_value, col_edit, col_delete = st.columns([4, 1, 1, 1])
         with col_title:
             st.write(row["Title"])
         with col_value:
             st.write(f"{int(row[config['value_column']])}")
+        with col_edit:
+            if st.button("✏️", key=f"edit_{kind}_{row_index}", help="עדכון"):
+                st.session_state.pending_edit = {
+                    "kind": kind,
+                    "row_index": row_index,
+                    "title": row["Title"],
+                    "value": int(row[config["value_column"]]),
+                }
         with col_delete:
             if st.button("🗑️", key=f"delete_{kind}_{row_index}", help="מחיקה"):
                 st.session_state.pending_delete = {
@@ -634,6 +758,46 @@ def add_item_dialog(kind: str):
         show_success_popup("פעולה עודכנה")
 
 
+@st.dialog("עדכון פריט")
+def edit_item_dialog(edit_data: dict):
+    config = get_catalog_config(edit_data["kind"])
+    st.write(f"עדכון: {config['dialog_title']}")
+
+    with st.form(f"edit_form_{edit_data['kind']}"):
+        title = st.text_input(config["title_label"], value=edit_data["title"])
+        value = st.number_input(config["value_label"], min_value=1, step=1, value=int(edit_data["value"]))
+        update = st.form_submit_button("Update", type="primary")
+        cancel = st.form_submit_button("Cancel")
+
+    if cancel:
+        st.session_state.pending_edit = None
+        st.rerun()
+
+    if update:
+        clean_title = title.strip()
+        if not clean_title:
+            st.error("יש למלא שם.")
+            return
+
+        catalog_df = get_or_create_catalog(
+            config["worksheet"],
+            config["value_column"],
+            config["defaults"],
+        )
+
+        duplicate_df = catalog_df.drop(index=edit_data["row_index"], errors="ignore")
+        if clean_title in duplicate_df["Title"].tolist():
+            st.error("כבר קיים פריט בשם הזה.")
+            return
+
+        if 0 <= edit_data["row_index"] < len(catalog_df):
+            catalog_df.at[edit_data["row_index"], "Title"] = clean_title
+            catalog_df.at[edit_data["row_index"], config["value_column"]] = int(value)
+            save_catalog(config["worksheet"], config["value_column"], catalog_df)
+        st.session_state.pending_edit = None
+        show_success_popup("פעולה עודכנה")
+
+
 @st.dialog("אישור מחיקה")
 def confirm_delete_dialog(kind: str, row_index: int, title: str):
     config = get_catalog_config(kind)
@@ -672,7 +836,7 @@ def confirm_child_task_dialog(members_df: pd.DataFrame, members_target: str | in
                 members_target,
                 task_data["user"],
                 int(task_data["points"]),
-                f"ביצוע {task_data['title']}",
+                f"{task_data['action_prefix']} {task_data['title']}",
             )
             st.session_state.pending_child_task = None
             show_success_popup("פעולה עודכנה")
@@ -712,21 +876,23 @@ init_session_state()
 
 members_df, members_target = get_members_data()
 chores_df = get_or_create_catalog(CHORES_WORKSHEET, "Points", DEFAULT_CHORES)
+behavior_df = get_or_create_catalog(BEHAVIOR_WORKSHEET, "Points", EMPTY_TASKS)
+education_df = get_or_create_catalog(EDUCATION_WORKSHEET, "Points", EMPTY_TASKS)
 prizes_df = get_or_create_catalog(PRIZES_WORKSHEET, "Price", DEFAULT_PRIZES)
 members_list = members_df["Name"].tolist()
 
 st.title("🏠 הבית המשותף שלנו")
 
-total_points = int(members_df["Points"].sum())
+monthly_points = get_monthly_points_total()
 col_title, col_val = st.columns([3, 1])
 with col_title:
-    st.write(f"#### 🎯 יעד משפחתי: {total_points} / {FAMILY_GOAL}")
+    st.write(f"#### 🎯 יעד חודשי: {monthly_points} / {FAMILY_GOAL}")
 with col_val:
     if st.button("🔄 רענן נתונים"):
         clear_sheet_cache()
         st.rerun()
 
-st.progress(min(total_points / FAMILY_GOAL, 1.0))
+st.progress(min(monthly_points / FAMILY_GOAL, 1.0))
 st.markdown("<h3 style='text-align: center;'>מצב הנקודות הנוכחי</h3>", unsafe_allow_html=True)
 
 st.markdown(
@@ -776,42 +942,76 @@ else:
     if is_admin:
         action_tabs = st.tabs(
             [
-                "🧹 מטלה / למידה",
+                "🧹 מטלות",
+                "🌟 התנהגות חיובית",
+                "📚 משימות לימוד",
                 "🎁 מימוש פרס",
                 "🛠️ ניהול מטלות",
+                "🛠️ ניהול התנהגות",
+                "🛠️ ניהול לימוד",
                 "🛍️ ניהול פרסים",
                 "📥 תבנית התחלתית",
                 "🕘 היסטוריה",
             ]
         )
         with action_tabs[0]:
-            render_chores_tab(members_df, members_target, chores_df, members_list, is_admin=True)
+            render_task_tab(members_df, members_target, chores_df, members_list, is_admin=True, kind="chores")
         with action_tabs[1]:
-            render_prizes_tab(members_df, members_target, prizes_df, members_list)
+            render_task_tab(members_df, members_target, behavior_df, members_list, is_admin=True, kind="behavior")
         with action_tabs[2]:
-            render_catalog_manager("chores", chores_df)
+            render_task_tab(members_df, members_target, education_df, members_list, is_admin=True, kind="education")
         with action_tabs[3]:
-            render_catalog_manager("prizes", prizes_df)
+            render_prizes_tab(members_df, members_target, prizes_df, members_list)
         with action_tabs[4]:
-            render_starter_template_tab(members_df)
+            render_catalog_manager("chores", chores_df)
         with action_tabs[5]:
+            render_catalog_manager("behavior", behavior_df)
+        with action_tabs[6]:
+            render_catalog_manager("education", education_df)
+        with action_tabs[7]:
+            render_catalog_manager("prizes", prizes_df)
+        with action_tabs[8]:
+            render_starter_template_tab(members_df)
+        with action_tabs[9]:
             render_history_tab()
     else:
         if st.session_state.active_user not in members_list:
             st.error(f"המשתמש {st.session_state.active_user} לא נמצא בגיליון Members.")
         else:
-            action_tabs = st.tabs(["🧹 מטלה / למידה"])
+            action_tabs = st.tabs(["🧹 מטלות", "🌟 התנהגות חיובית", "📚 משימות לימוד"])
             with action_tabs[0]:
-                render_chores_tab(
+                render_task_tab(
                     members_df,
                     members_target,
                     chores_df,
                     [st.session_state.active_user],
                     is_admin=False,
+                    kind="chores",
+                )
+            with action_tabs[1]:
+                render_task_tab(
+                    members_df,
+                    members_target,
+                    behavior_df,
+                    [st.session_state.active_user],
+                    is_admin=False,
+                    kind="behavior",
+                )
+            with action_tabs[2]:
+                render_task_tab(
+                    members_df,
+                    members_target,
+                    education_df,
+                    [st.session_state.active_user],
+                    is_admin=False,
+                    kind="education",
                 )
 
 if st.session_state.show_add_dialog:
     add_item_dialog(st.session_state.show_add_dialog)
+
+if st.session_state.pending_edit:
+    edit_item_dialog(st.session_state.pending_edit)
 
 if st.session_state.pending_delete:
     confirm_delete_dialog(
