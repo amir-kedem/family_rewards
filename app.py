@@ -2,7 +2,9 @@ import pandas as pd
 import streamlit as st
 from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_gsheets import GSheetsConnection
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="הבית המשותף שלנו", page_icon="🏠", layout="centered")
 
@@ -19,6 +21,9 @@ READ_TTL = "60s"
 MEMBERS_WORKSHEET = "Members"
 CHORES_WORKSHEET = "Chores"
 PRIZES_WORKSHEET = "Prizes"
+HISTORY_WORKSHEET = "History"
+HISTORY_RETENTION_DAYS = 8
+LOCAL_TIMEZONE = ZoneInfo("Asia/Jerusalem")
 
 DEFAULT_CHORES = pd.DataFrame(
     [
@@ -41,6 +46,8 @@ DEFAULT_PRIZES = pd.DataFrame(
     ]
 )
 
+EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "Timestamp"])
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 
@@ -51,6 +58,8 @@ def init_session_state():
         "selected_login": LOGIN_OPTIONS[0],
         "last_action": None,
         "pending_delete": None,
+        "pending_child_task": None,
+        "pending_clear_history": False,
         "show_add_dialog": None,
         "admin_password_input": "",
         "success_message": None,
@@ -107,7 +116,26 @@ def clean_catalog_df(df: pd.DataFrame, value_column: str) -> pd.DataFrame:
     catalog = catalog[catalog["Title"] != ""].reset_index(drop=True)
     catalog[value_column] = pd.to_numeric(catalog[value_column], errors="coerce").fillna(0).astype(int)
     catalog = catalog[catalog[value_column] > 0].reset_index(drop=True)
+    catalog = catalog.sort_values(by=[value_column, "Title"], ascending=[True, True], kind="stable").reset_index(drop=True)
     return catalog
+
+
+def clean_history_df(df: pd.DataFrame) -> pd.DataFrame:
+    history = df.copy()
+    for column in ["Date", "Time", "User", "Action", "Points", "Timestamp"]:
+        if column not in history.columns:
+            history[column] = ""
+
+    history = history[["Date", "Time", "User", "Action", "Points", "Timestamp"]].dropna(how="all")
+    history["User"] = history["User"].astype(str).str.strip()
+    history["Action"] = history["Action"].astype(str).str.strip()
+    history["Points"] = pd.to_numeric(history["Points"], errors="coerce").fillna(0).astype(int)
+    history["Timestamp"] = pd.to_datetime(history["Timestamp"], errors="coerce")
+    history = history.dropna(subset=["Timestamp"]).sort_values(by="Timestamp", ascending=False, kind="stable").reset_index(drop=True)
+    history["Date"] = history["Timestamp"].dt.strftime("%Y-%m-%d")
+    history["Time"] = history["Timestamp"].dt.strftime("%H:%M:%S")
+    history["Timestamp"] = history["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    return history
 
 
 def extract_sheet_id(sheet_url: str) -> str:
@@ -235,6 +263,44 @@ def save_catalog(worksheet: str, value_column: str, data: pd.DataFrame):
     write_worksheet(worksheet, cleaned)
 
 
+def get_history_data() -> pd.DataFrame:
+    try:
+        return clean_history_df(read_worksheet(HISTORY_WORKSHEET))
+    except APIError as exc:
+        stop_for_sheet_error(exc, f"קריאת הגיליון {HISTORY_WORKSHEET}")
+    except WorksheetNotFound:
+        create_worksheet(HISTORY_WORKSHEET, EMPTY_HISTORY)
+        return EMPTY_HISTORY.copy()
+
+
+def append_history_entry(user_name: str, action_label: str, points_delta: int):
+    now = datetime.now(LOCAL_TIMEZONE)
+    cutoff = pd.Timestamp(now - timedelta(days=HISTORY_RETENTION_DAYS)).tz_localize(None)
+    history_df = get_history_data()
+
+    if not history_df.empty:
+        history_df["Timestamp"] = pd.to_datetime(history_df["Timestamp"], errors="coerce")
+        history_df = history_df[history_df["Timestamp"] >= cutoff].copy()
+        history_df["Date"] = history_df["Timestamp"].dt.strftime("%Y-%m-%d")
+        history_df["Time"] = history_df["Timestamp"].dt.strftime("%H:%M:%S")
+        history_df["Timestamp"] = history_df["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    new_entry = pd.DataFrame(
+        [
+            {
+                "Date": now.strftime("%Y-%m-%d"),
+                "Time": now.strftime("%H:%M:%S"),
+                "User": user_name,
+                "Action": action_label,
+                "Points": int(points_delta),
+                "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        ]
+    )
+    updated_history = pd.concat([new_entry, history_df], ignore_index=True)
+    write_worksheet(HISTORY_WORKSHEET, updated_history)
+
+
 def get_catalog_config(kind: str) -> dict:
     if kind == "chores":
         return {
@@ -262,6 +328,8 @@ def reset_login_state():
     st.session_state.active_user = None
     st.session_state.admin_password_input = ""
     st.session_state.pending_delete = None
+    st.session_state.pending_child_task = None
+    st.session_state.pending_clear_history = False
     st.session_state.show_add_dialog = None
     st.session_state.success_message = None
 
@@ -289,6 +357,7 @@ def update_member_points(
     idx = members_df[members_df["Name"] == member_name].index[0]
     members_df.at[idx, "Points"] += delta
     write_worksheet(members_target, members_df)
+    append_history_entry(member_name, action_label, delta)
     st.session_state.last_action = (member_name, delta, action_label)
 
 
@@ -348,6 +417,7 @@ def render_undo(members_df: pd.DataFrame, members_target: str | int):
             idx = members_df[members_df["Name"] == last_user].index[0]
             members_df.at[idx, "Points"] -= last_points
             write_worksheet(members_target, members_df)
+            append_history_entry(last_user, f"ביטול: {last_type}", -last_points)
             st.session_state.last_action = None
             show_success_popup("פעולה עודכנה")
 
@@ -370,6 +440,45 @@ def render_anger_tab(members_df: pd.DataFrame, members_target: str | int, member
         show_success_popup("פעולה עודכנה")
 
 
+def get_child_task_layout(task_options: list[tuple[str, int]]) -> tuple[int, int]:
+    longest_title = max((len(str(task[0])) for task in task_options), default=0)
+    columns_count = 1 if longest_title >= 24 else 2
+    button_height = 110 if longest_title >= 24 else 90
+    return columns_count, button_height
+
+
+def render_child_task_buttons(task_options: list[tuple[str, int]], selected_user: str):
+    columns_count, button_height = get_child_task_layout(task_options)
+    st.markdown(
+        f"""
+        <style>
+        div.stButton > button {{
+            white-space: pre-wrap;
+            min-height: {button_height}px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for start_idx in range(0, len(task_options), columns_count):
+        columns = st.columns(columns_count)
+        for col_idx in range(columns_count):
+            option_idx = start_idx + col_idx
+            if option_idx >= len(task_options):
+                continue
+            task_title, task_points = task_options[option_idx]
+            label = f"{task_title}\n{int(task_points)} נק'"
+            with columns[col_idx]:
+                if st.button(label, key=f"child_task_btn_{option_idx}", use_container_width=True):
+                    st.session_state.pending_child_task = {
+                        "user": selected_user,
+                        "title": task_title,
+                        "points": int(task_points),
+                    }
+                    st.rerun()
+
+
 def render_chores_tab(
     members_df: pd.DataFrame,
     members_target: str | int,
@@ -383,22 +492,23 @@ def render_chores_tab(
 
     if is_admin:
         selected_user = st.radio("מי ביצע?", member_options, key="task_user", horizontal=True)
+        task_options = list(chores_df.itertuples(index=False, name=None))
+        task = st.selectbox(
+            "בחר מטלה",
+            task_options,
+            key="task_choice",
+            format_func=lambda item: f"{item[0]} ({int(item[1])} נק')",
+        )
+
+        if st.button("אישור ביצוע מטלה 🧹", key="btn_task"):
+            earned = int(task[1])
+            update_member_points(members_df, members_target, selected_user, earned, f"ביצוע {task[0]}")
+            show_success_popup("פעולה עודכנה")
     else:
         selected_user = st.session_state.active_user
         st.info(f"הדיווח יירשם עבור {selected_user}")
-
-    task_options = list(chores_df.itertuples(index=False, name=None))
-    task = st.selectbox(
-        "בחר מטלה",
-        task_options,
-        key="task_choice",
-        format_func=lambda item: f"{item[0]} ({int(item[1])} נק')",
-    )
-
-    if st.button("אישור ביצוע מטלה 🧹", key="btn_task"):
-        earned = int(task[1])
-        update_member_points(members_df, members_target, selected_user, earned, f"ביצוע {task[0]}")
-        show_success_popup("פעולה עודכנה")
+        task_options = list(chores_df.itertuples(index=False, name=None))
+        render_child_task_buttons(task_options, selected_user)
 
 
 def render_prizes_tab(members_df: pd.DataFrame, members_target: str | int, prizes_df: pd.DataFrame, member_options: list[str]):
@@ -462,6 +572,23 @@ def render_starter_template_tab(members_df: pd.DataFrame):
     if st.button("טעינת תבנית התחלתית", type="primary", disabled=not confirm, key="load_starter_template"):
         load_starter_template(members_df)
         show_success_popup("פעולה עודכנה")
+
+
+def render_history_tab():
+    st.subheader("היסטוריית פעולות")
+    if st.button("נקה היסטוריה", type="primary", key="open_clear_history"):
+        st.session_state.pending_clear_history = True
+        st.rerun()
+
+    history_df = get_history_data()
+
+    if history_df.empty:
+        st.info("אין פעולות מתועדות ב-8 הימים האחרונים.")
+        return
+
+    display_df = history_df[["Date", "Time", "User", "Action", "Points"]].copy()
+    display_df.columns = ["תאריך", "שעה", "משתמש", "פעולה", "נקודות"]
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 
 @st.dialog("הוספת פריט")
@@ -529,6 +656,47 @@ def confirm_delete_dialog(kind: str, row_index: int, title: str):
     with col_cancel:
         if st.button("ביטול", key=f"cancel_delete_{kind}_{row_index}"):
             st.session_state.pending_delete = None
+            st.rerun()
+
+
+@st.dialog("אישור מטלה")
+def confirm_child_task_dialog(members_df: pd.DataFrame, members_target: str | int, task_data: dict):
+    st.write(f"האם לאשר את המטלה '{task_data['title']}'?")
+    st.write(f"{task_data['points']} נק' עבור {task_data['user']}")
+
+    col_confirm, col_cancel = st.columns(2)
+    with col_confirm:
+        if st.button("אישור", type="primary", key="confirm_child_task"):
+            update_member_points(
+                members_df,
+                members_target,
+                task_data["user"],
+                int(task_data["points"]),
+                f"ביצוע {task_data['title']}",
+            )
+            st.session_state.pending_child_task = None
+            show_success_popup("פעולה עודכנה")
+
+    with col_cancel:
+        if st.button("ביטול", key="cancel_child_task"):
+            st.session_state.pending_child_task = None
+            st.rerun()
+
+
+@st.dialog("אישור ניקוי היסטוריה")
+def confirm_clear_history_dialog():
+    st.write("האם למחוק את כל ההיסטוריה?")
+    col_confirm, col_cancel = st.columns(2)
+
+    with col_confirm:
+        if st.button("מחק הכל", type="primary", key="confirm_clear_history"):
+            write_worksheet(HISTORY_WORKSHEET, EMPTY_HISTORY.copy())
+            st.session_state.pending_clear_history = False
+            show_success_popup("פעולה עודכנה")
+
+    with col_cancel:
+        if st.button("ביטול", key="cancel_clear_history"):
+            st.session_state.pending_clear_history = False
             st.rerun()
 
 
@@ -608,34 +776,32 @@ else:
     if is_admin:
         action_tabs = st.tabs(
             [
-                "⚡ התגברות על כעס",
                 "🧹 מטלה / למידה",
                 "🎁 מימוש פרס",
                 "🛠️ ניהול מטלות",
                 "🛍️ ניהול פרסים",
                 "📥 תבנית התחלתית",
+                "🕘 היסטוריה",
             ]
         )
         with action_tabs[0]:
-            render_anger_tab(members_df, members_target, members_list, is_admin=True)
-        with action_tabs[1]:
             render_chores_tab(members_df, members_target, chores_df, members_list, is_admin=True)
-        with action_tabs[2]:
+        with action_tabs[1]:
             render_prizes_tab(members_df, members_target, prizes_df, members_list)
-        with action_tabs[3]:
+        with action_tabs[2]:
             render_catalog_manager("chores", chores_df)
-        with action_tabs[4]:
+        with action_tabs[3]:
             render_catalog_manager("prizes", prizes_df)
-        with action_tabs[5]:
+        with action_tabs[4]:
             render_starter_template_tab(members_df)
+        with action_tabs[5]:
+            render_history_tab()
     else:
         if st.session_state.active_user not in members_list:
             st.error(f"המשתמש {st.session_state.active_user} לא נמצא בגיליון Members.")
         else:
-            action_tabs = st.tabs(["⚡ התגברות על כעס", "🧹 מטלה / למידה"])
+            action_tabs = st.tabs(["🧹 מטלה / למידה"])
             with action_tabs[0]:
-                render_anger_tab(members_df, members_target, [st.session_state.active_user], is_admin=False)
-            with action_tabs[1]:
                 render_chores_tab(
                     members_df,
                     members_target,
@@ -653,6 +819,16 @@ if st.session_state.pending_delete:
         st.session_state.pending_delete["row_index"],
         st.session_state.pending_delete["title"],
     )
+
+if st.session_state.pending_child_task:
+    confirm_child_task_dialog(
+        members_df,
+        members_target,
+        st.session_state.pending_child_task,
+    )
+
+if st.session_state.pending_clear_history:
+    confirm_clear_history_dialog()
 
 if st.session_state.success_message:
     success_dialog(st.session_state.success_message)
