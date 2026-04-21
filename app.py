@@ -51,7 +51,7 @@ DEFAULT_PRIZES = pd.DataFrame(
 
 EMPTY_TASKS = pd.DataFrame(columns=["Title", "Points"])
 
-EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "Timestamp"])
+EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"])
 EMPTY_MONTHLY_LEDGER = pd.DataFrame(columns=["Month", "Date", "Time", "User", "Action", "Points", "Timestamp"])
 
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -129,18 +129,22 @@ def clean_catalog_df(df: pd.DataFrame, value_column: str) -> pd.DataFrame:
 
 def clean_history_df(df: pd.DataFrame) -> pd.DataFrame:
     history = df.copy()
-    for column in ["Date", "Time", "User", "Action", "Points", "Timestamp"]:
+    for column in ["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"]:
         if column not in history.columns:
             history[column] = ""
 
-    history = history[["Date", "Time", "User", "Action", "Points", "Timestamp"]].dropna(how="all")
+    history = history[["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"]].dropna(how="all")
     history["User"] = history["User"].astype(str).str.strip()
     history["Action"] = history["Action"].astype(str).str.strip()
     history["Points"] = pd.to_numeric(history["Points"], errors="coerce").fillna(0).astype(int)
+    history["PreviousPoints"] = pd.to_numeric(history["PreviousPoints"], errors="coerce")
+    history["CurrentPoints"] = pd.to_numeric(history["CurrentPoints"], errors="coerce")
     history["Timestamp"] = pd.to_datetime(history["Timestamp"], errors="coerce")
     history = history.dropna(subset=["Timestamp"]).sort_values(by="Timestamp", ascending=False, kind="stable").reset_index(drop=True)
     history["Date"] = history["Timestamp"].dt.strftime("%Y-%m-%d")
     history["Time"] = history["Timestamp"].dt.strftime("%H:%M:%S")
+    history["PreviousPoints"] = history["PreviousPoints"].astype("Int64")
+    history["CurrentPoints"] = history["CurrentPoints"].astype("Int64")
     history["Timestamp"] = history["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
     return history
 
@@ -309,7 +313,7 @@ def get_monthly_ledger_data() -> pd.DataFrame:
         return EMPTY_MONTHLY_LEDGER.copy()
 
 
-def append_history_entry(user_name: str, action_label: str, points_delta: int):
+def append_history_entry(user_name: str, action_label: str, points_delta: int, previous_points: int | None = None, current_points: int | None = None):
     now = datetime.now(LOCAL_TIMEZONE)
     cutoff = pd.Timestamp(now - timedelta(days=HISTORY_RETENTION_DAYS)).tz_localize(None)
     history_df = get_history_data()
@@ -329,6 +333,8 @@ def append_history_entry(user_name: str, action_label: str, points_delta: int):
                 "User": user_name,
                 "Action": action_label,
                 "Points": int(points_delta),
+                "PreviousPoints": previous_points,
+                "CurrentPoints": current_points,
                 "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
             }
         ]
@@ -459,9 +465,11 @@ def update_member_points(
     action_label: str,
 ):
     idx = members_df[members_df["Name"] == member_name].index[0]
+    previous_points = int(members_df.at[idx, "Points"])
     members_df.at[idx, "Points"] += delta
+    current_points = int(members_df.at[idx, "Points"])
     write_worksheet(members_target, members_df)
-    append_history_entry(member_name, action_label, delta)
+    append_history_entry(member_name, action_label, delta, previous_points, current_points)
     append_monthly_ledger_entry(member_name, action_label, delta)
     st.session_state.last_action = (member_name, delta, action_label)
 
@@ -520,9 +528,11 @@ def render_undo(members_df: pd.DataFrame, members_target: str | int):
     with st.warning(f"פעולה אחרונה: {last_type} ל-{last_user} ({last_points} נק')"):
         if st.button("⏮️ בטל פעולה אחרונה", key="undo_last_action"):
             idx = members_df[members_df["Name"] == last_user].index[0]
+            previous_points = int(members_df.at[idx, "Points"])
             members_df.at[idx, "Points"] -= last_points
+            current_points = int(members_df.at[idx, "Points"])
             write_worksheet(members_target, members_df)
-            append_history_entry(last_user, f"ביטול: {last_type}", -last_points)
+            append_history_entry(last_user, f"ביטול: {last_type}", -last_points, previous_points, current_points)
             append_monthly_ledger_entry(last_user, f"ביטול: {last_type}", -last_points)
             st.session_state.last_action = None
             show_success_popup("פעולה עודכנה")
@@ -710,8 +720,8 @@ def render_history_tab():
         st.info("אין פעולות מתועדות ב-8 הימים האחרונים.")
         return
 
-    display_df = history_df[["Date", "Time", "User", "Action", "Points"]].copy()
-    display_df.columns = ["תאריך", "שעה", "משתמש", "פעולה", "נקודות"]
+    display_df = history_df[["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints"]].copy()
+    display_df.columns = ["תאריך", "שעה", "משתמש", "פעולה", "נקודות", "נקודות לפני", "נקודות אחרי"]
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 

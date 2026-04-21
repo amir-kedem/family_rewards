@@ -54,18 +54,22 @@ def clean_catalog_df(df: pd.DataFrame, value_column: str) -> pd.DataFrame:
 
 def clean_history_df(df: pd.DataFrame) -> pd.DataFrame:
     history = df.copy()
-    for column in ["Date", "Time", "User", "Action", "Points", "Timestamp"]:
+    for column in ["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"]:
         if column not in history.columns:
             history[column] = ""
 
-    history = history[["Date", "Time", "User", "Action", "Points", "Timestamp"]].dropna(how="all")
+    history = history[["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"]].dropna(how="all")
     history["User"] = history["User"].astype(str).str.strip()
     history["Action"] = history["Action"].astype(str).str.strip()
     history["Points"] = pd.to_numeric(history["Points"], errors="coerce").fillna(0).astype(int)
+    history["PreviousPoints"] = pd.to_numeric(history["PreviousPoints"], errors="coerce")
+    history["CurrentPoints"] = pd.to_numeric(history["CurrentPoints"], errors="coerce")
     history["Timestamp"] = pd.to_datetime(history["Timestamp"], errors="coerce")
     history = history.dropna(subset=["Timestamp"]).sort_values(by="Timestamp", ascending=False, kind="stable").reset_index(drop=True)
     history["Date"] = history["Timestamp"].dt.strftime("%Y-%m-%d")
     history["Time"] = history["Timestamp"].dt.strftime("%H:%M:%S")
+    history["PreviousPoints"] = history["PreviousPoints"].astype("Int64")
+    history["CurrentPoints"] = history["CurrentPoints"].astype("Int64")
     history["Timestamp"] = history["Timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
     return history
 

@@ -123,8 +123,24 @@ def test_history_cleanup(env: dict[str, Any]):
     older = now - timedelta(days=2)
     df = pd.DataFrame(
         [
-            {"Date": "", "Time": "", "User": "גוני", "Action": "ביצוע משהו", "Points": 10, "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S")},
-            {"Date": "", "Time": "", "User": "נווה", "Action": "ביצוע אחר", "Points": 5, "Timestamp": older.strftime("%Y-%m-%d %H:%M:%S")},
+            {
+                "Date": "",
+                "Time": "",
+                "User": "גוני",
+                "Action": "ביצוע משהו",
+                "Points": 10,
+                "PreviousPoints": 20,
+                "CurrentPoints": 30,
+                "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            },
+            {
+                "Date": "",
+                "Time": "",
+                "User": "נווה",
+                "Action": "ביצוע אחר",
+                "Points": 5,
+                "Timestamp": older.strftime("%Y-%m-%d %H:%M:%S"),
+            },
         ]
     )
     result = clean_history_df(df)
@@ -132,6 +148,8 @@ def test_history_cleanup(env: dict[str, Any]):
     assert_true(result.iloc[1]["User"] == "נווה", "history should retain older rows within retention")
     assert_true(result.iloc[0]["Date"] != "", "history should backfill date")
     assert_true(result.iloc[0]["Time"] != "", "history should backfill time")
+    assert_true(int(result.iloc[0]["PreviousPoints"]) == 20, "history should preserve previous points")
+    assert_true(int(result.iloc[0]["CurrentPoints"]) == 30, "history should preserve current points")
 
 
 def test_monthly_goal_logic(env: dict[str, Any]):

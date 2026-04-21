@@ -83,7 +83,14 @@ class PointSystemService:
             self.store.create_worksheet(MONTHLY_LEDGER_WORKSHEET, EMPTY_MONTHLY_LEDGER)
             return EMPTY_MONTHLY_LEDGER.copy()
 
-    def append_history_entry(self, user_name: str, action_label: str, points_delta: int) -> None:
+    def append_history_entry(
+        self,
+        user_name: str,
+        action_label: str,
+        points_delta: int,
+        previous_points: int | None = None,
+        current_points: int | None = None,
+    ) -> None:
         now = datetime.now(LOCAL_TIMEZONE)
         cutoff = pd.Timestamp(now - timedelta(days=HISTORY_RETENTION_DAYS)).tz_localize(None)
         history_df = self.get_history_data()
@@ -103,6 +110,8 @@ class PointSystemService:
                     "User": user_name,
                     "Action": action_label,
                     "Points": int(points_delta),
+                    "PreviousPoints": previous_points,
+                    "CurrentPoints": current_points,
                     "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
                 }
             ]
@@ -160,9 +169,11 @@ class PointSystemService:
         action_label: str,
     ) -> tuple[str, int, str]:
         idx = members_df[members_df["Name"] == member_name].index[0]
+        previous_points = int(members_df.at[idx, "Points"])
         members_df.at[idx, "Points"] += delta
+        current_points = int(members_df.at[idx, "Points"])
         self.store.write_worksheet(members_target, members_df)
-        self.append_history_entry(member_name, action_label, delta)
+        self.append_history_entry(member_name, action_label, delta, previous_points, current_points)
         self.append_monthly_ledger_entry(member_name, action_label, delta)
         return member_name, delta, action_label
 

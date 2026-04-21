@@ -42,7 +42,7 @@ DEFAULT_PRIZES = pd.DataFrame(
 )
 
 EMPTY_TASKS = pd.DataFrame(columns=["Title", "Points"])
-EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "Timestamp"])
+EMPTY_HISTORY = pd.DataFrame(columns=["Date", "Time", "User", "Action", "Points", "PreviousPoints", "CurrentPoints", "Timestamp"])
 EMPTY_MONTHLY_LEDGER = pd.DataFrame(columns=["Month", "Date", "Time", "User", "Action", "Points", "Timestamp"])
 
 

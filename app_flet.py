@@ -36,7 +36,7 @@ if os.getenv("PORT"):
 os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
 DATA_CACHE_TTL_SECONDS = 20
-APP_BUILD = "family-rewards-flet-inline-catalog-buttons-2026-04-21"
+APP_BUILD = "family-rewards-flet-ux-history-2026-04-21"
 
 print(f"Starting {APP_BUILD}")
 
@@ -60,6 +60,7 @@ def main(page: ft.Page):
         "selected_tabs": {},
         "message": None,
         "busy": False,
+        "success_dialog": None,
         "catalog_forms": {},
         "catalog_form_values": {},
         "pending_catalog_delete": {},
@@ -79,6 +80,14 @@ def main(page: ft.Page):
         snack_bar = ft.SnackBar(ft.Text(message), open=True)
         page.overlay.append(snack_bar)
         page.update()
+
+    def show_success_dialog(message: str = "פעולה בוצעה") -> None:
+        state["success_dialog"] = message
+        rerender()
+
+    def close_success_dialog(_: ft.ControlEvent | None = None) -> None:
+        state["success_dialog"] = None
+        rerender()
 
     def refresh_data(force: bool = False) -> bool:
         loaded_at = data_cache.get("loaded_at")
@@ -110,6 +119,7 @@ def main(page: ft.Page):
             ft.Column(
                 controls=[
                     render_top_bar(),
+                    render_success_notice(),
                     render_goal(),
                     render_members_table(data["members_df"]),
                     ft.Divider(),
@@ -203,6 +213,7 @@ def main(page: ft.Page):
                 state["message"] = "פעולה עודכנה"
                 state["busy"] = False
                 rerender(force_refresh=True)
+                show_success_dialog("פעולה בוצעה")
             except SheetAccessError as exc:
                 state["busy"] = False
                 render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -265,6 +276,7 @@ def main(page: ft.Page):
                     state["message"] = "פעולה עודכנה"
                     state["busy"] = False
                     rerender(force_refresh=True)
+                    show_success_dialog("פעולה בוצעה")
                 except SheetAccessError as exc:
                     state["busy"] = False
                     render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -381,6 +393,7 @@ def main(page: ft.Page):
                 state["message"] = "פעולה עודכנה"
                 state["busy"] = False
                 rerender(force_refresh=True)
+                show_success_dialog("פעולה בוצעה")
             except SheetAccessError as exc:
                 state["busy"] = False
                 render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -412,6 +425,7 @@ def main(page: ft.Page):
                 state["message"] = "ההיסטוריה נמחקה"
                 state["busy"] = False
                 rerender(force_refresh=True)
+                show_success_dialog("ההיסטוריה נמחקה")
             except SheetAccessError as exc:
                 state["busy"] = False
                 render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -436,6 +450,7 @@ def main(page: ft.Page):
                 state["message"] = "תבנית ההתחלה נטענה"
                 state["busy"] = False
                 rerender(force_refresh=True)
+                show_success_dialog("תבנית ההתחלה נטענה")
             except SheetAccessError as exc:
                 state["busy"] = False
                 render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -460,6 +475,12 @@ def main(page: ft.Page):
         return ft.Row(
             controls=[
                 ft.Column(controls, spacing=2, expand=True),
+                ft.OutlinedButton(
+                    "בטל פעולה אחרונה",
+                    visible=bool(state["role"] and state["last_action"]),
+                    disabled=bool(state["busy"]),
+                    on_click=undo_last,
+                ),
                 ft.IconButton(ft.Icons.REFRESH, tooltip="רענן נתונים", on_click=lambda _: rerender(force_refresh=True)),
                 ft.OutlinedButton("יציאה", visible=bool(state["role"]), on_click=logout),
             ],
@@ -505,6 +526,23 @@ def main(page: ft.Page):
         if state["role"] == "admin":
             return render_admin_tabs()
         return render_child_tabs()
+
+    def render_success_notice() -> ft.Control:
+        if not state["success_dialog"]:
+            return ft.Container()
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text(str(state["success_dialog"]), size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.ElevatedButton("OK", on_click=close_success_dialog),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=14,
+            bgcolor=ft.Colors.GREEN_100,
+            border_radius=8,
+        )
 
     def render_login() -> ft.Control:
         password = ft.TextField(label="סיסמה", password=True, can_reveal_password=True, width=220)
@@ -568,7 +606,7 @@ def main(page: ft.Page):
                         spacing=2,
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    width=180,
+                    width=150,
                     height=78,
                     disabled=bool(state["busy"]),
                     on_click=lambda _, user=user_name, pts=points, action=action_label: update_points(user, pts, action),
@@ -598,7 +636,7 @@ def main(page: ft.Page):
                         spacing=2,
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    width=190,
+                    width=150,
                     height=78,
                     disabled=disabled or bool(state["busy"]),
                     on_click=lambda _, user=user_name, cost=price, prize=title: update_points(user, -cost, f"מימוש {prize}"),
@@ -680,28 +718,52 @@ def main(page: ft.Page):
         if history_df.empty:
             table = ft.Text("אין פעולות מתועדות ב-8 הימים האחרונים.", color=ft.Colors.GREY_700)
         else:
-            rows = []
+            table_rows: list[ft.Control] = [
+                ft.Row(
+                    [
+                        ft.Text("תאריך", weight=ft.FontWeight.BOLD, width=100),
+                        ft.Text("שעה", weight=ft.FontWeight.BOLD, width=90),
+                        ft.Text("משתמש", weight=ft.FontWeight.BOLD, width=100),
+                        ft.Text("פעולה", weight=ft.FontWeight.BOLD, width=260),
+                        ft.Text("שינוי", weight=ft.FontWeight.BOLD, width=80),
+                        ft.Text("לפני", weight=ft.FontWeight.BOLD, width=80),
+                        ft.Text("אחרי", weight=ft.FontWeight.BOLD, width=80),
+                    ],
+                    spacing=8,
+                )
+            ]
+
+            def history_value(row: pd.Series, column: str) -> str:
+                value = row.get(column, "")
+                if pd.isna(value):
+                    return ""
+                if column in {"Points", "PreviousPoints", "CurrentPoints"}:
+                    return str(int(value))
+                return str(value)
+
             for _, row in history_df.head(50).iterrows():
-                rows.append(
-                    ft.DataRow(
-                        cells=[
-                            ft.DataCell(ft.Text(str(row["Date"]))),
-                            ft.DataCell(ft.Text(str(row["Time"]))),
-                            ft.DataCell(ft.Text(str(row["User"]))),
-                            ft.DataCell(ft.Text(str(row["Action"]))),
-                            ft.DataCell(ft.Text(str(int(row["Points"])))),
-                        ]
+                table_rows.append(
+                    ft.Container(
+                        content=ft.Row(
+                            [
+                                ft.Text(history_value(row, "Date"), width=100),
+                                ft.Text(history_value(row, "Time"), width=90),
+                                ft.Text(history_value(row, "User"), width=100),
+                                ft.Text(history_value(row, "Action"), width=260),
+                                ft.Text(history_value(row, "Points"), width=80),
+                                ft.Text(history_value(row, "PreviousPoints"), width=80),
+                                ft.Text(history_value(row, "CurrentPoints"), width=80),
+                            ],
+                            spacing=8,
+                        ),
+                        padding=6,
+                        border=ft.border.only(bottom=ft.BorderSide(1, ft.Colors.GREY_300)),
                     )
                 )
-            table = ft.DataTable(
-                columns=[
-                    ft.DataColumn(ft.Text("תאריך")),
-                    ft.DataColumn(ft.Text("שעה")),
-                    ft.DataColumn(ft.Text("משתמש")),
-                    ft.DataColumn(ft.Text("פעולה")),
-                    ft.DataColumn(ft.Text("נקודות")),
-                ],
-                rows=rows,
+
+            table = ft.Row(
+                [ft.Column(table_rows, spacing=0, width=860)],
+                scroll=ft.ScrollMode.AUTO,
             )
         return ft.Column(
             [
@@ -722,7 +784,6 @@ def main(page: ft.Page):
             undo = ft.Row(
                 [
                     ft.Text(f"פעולה אחרונה: {last_label} ל-{last_user} ({last_points} נק')", expand=True),
-                    ft.OutlinedButton("בטל פעולה אחרונה", disabled=bool(state["busy"]), on_click=undo_last),
                 ],
                 wrap=True,
             )
