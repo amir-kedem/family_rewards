@@ -30,7 +30,7 @@ from point_system.constants import (
 from point_system.service import create_service
 from point_system.sheets import SheetAccessError
 
-if os.getenv("PORT") and not os.getenv("FLET_SERVER_PORT"):
+if os.getenv("PORT"):
     os.environ["FLET_SERVER_PORT"] = os.environ["PORT"]
 os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
