@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -34,6 +35,8 @@ if os.getenv("PORT"):
     os.environ["FLET_SERVER_PORT"] = os.environ["PORT"]
 os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
+DATA_CACHE_TTL_SECONDS = 20
+
 
 def money_or_points(value: int, suffix: str = "נק'") -> str:
     return f"{int(value)} {suffix}"
@@ -55,6 +58,7 @@ def main(page: ft.Page):
         "message": None,
     }
     data: dict[str, object] = {}
+    data_cache: dict[str, object] = {"loaded_at": None}
 
     try:
         config = load_config(ROOT)
@@ -83,7 +87,12 @@ def main(page: ft.Page):
             dialog.open = False
             page.update()
 
-    def refresh_data() -> bool:
+    def refresh_data(force: bool = False) -> bool:
+        loaded_at = data_cache.get("loaded_at")
+        if not force and isinstance(loaded_at, datetime):
+            if datetime.now() - loaded_at < timedelta(seconds=DATA_CACHE_TTL_SECONDS):
+                return True
+
         try:
             members_df, members_target = service.get_members_data()
             data["members_df"] = members_df
@@ -93,13 +102,14 @@ def main(page: ft.Page):
             data["education_df"] = service.get_or_create_catalog(EDUCATION_WORKSHEET, "Points", EMPTY_TASKS)
             data["prizes_df"] = service.get_or_create_catalog(PRIZES_WORKSHEET, "Price", DEFAULT_PRIZES)
             data["monthly_points"] = service.get_monthly_points_total()
+            data_cache["loaded_at"] = datetime.now()
             return True
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
             return False
 
-    def rerender() -> None:
-        if not refresh_data():
+    def rerender(force_refresh: bool = False) -> None:
+        if not refresh_data(force=force_refresh):
             return
 
         page.controls.clear()
@@ -187,7 +197,7 @@ def main(page: ft.Page):
             )
             state["last_action"] = last_action if remember else None
             show_message("פעולה עודכנה")
-            rerender()
+            rerender(force_refresh=True)
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
@@ -250,7 +260,7 @@ def main(page: ft.Page):
         try:
             service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
             show_message("פעולה עודכנה")
-            rerender()
+            rerender(force_refresh=True)
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
@@ -289,7 +299,7 @@ def main(page: ft.Page):
         try:
             service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
             show_message("פעולה עודכנה")
-            rerender()
+            rerender(force_refresh=True)
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
@@ -313,7 +323,7 @@ def main(page: ft.Page):
         try:
             service.clear_history()
             show_message("ההיסטוריה נמחקה")
-            rerender()
+            rerender(force_refresh=True)
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
@@ -321,7 +331,7 @@ def main(page: ft.Page):
         try:
             service.load_starter_template(data["members_df"])
             show_message("תבנית ההתחלה נטענה")
-            rerender()
+            rerender(force_refresh=True)
         except SheetAccessError as exc:
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
@@ -335,7 +345,7 @@ def main(page: ft.Page):
         return ft.Row(
             controls=[
                 ft.Column(controls, spacing=2, expand=True),
-                ft.IconButton(ft.Icons.REFRESH, tooltip="רענן נתונים", on_click=lambda _: rerender()),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="רענן נתונים", on_click=lambda _: rerender(force_refresh=True)),
                 ft.OutlinedButton("יציאה", visible=bool(state["role"]), on_click=logout),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
