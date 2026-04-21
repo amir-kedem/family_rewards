@@ -60,6 +60,8 @@ def main(page: ft.Page):
         "selected_tabs": {},
         "message": None,
         "busy": False,
+        "catalog_forms": {},
+        "pending_catalog_delete": {},
     }
     data: dict[str, object] = {}
     data_cache: dict[str, object] = {"loaded_at": None}
@@ -75,16 +77,6 @@ def main(page: ft.Page):
         state["message"] = message
         snack_bar = ft.SnackBar(ft.Text(message), open=True)
         page.overlay.append(snack_bar)
-        page.update()
-
-    def open_dialog(dialog: ft.AlertDialog) -> None:
-        dialog.open = True
-        if dialog not in page.overlay:
-            page.overlay.append(dialog)
-        page.update()
-
-    def close_dialog(dialog: ft.AlertDialog) -> None:
-        dialog.open = False
         page.update()
 
     def refresh_data(force: bool = False) -> bool:
@@ -263,6 +255,7 @@ def main(page: ft.Page):
         try:
             state["busy"] = True
             state["message"] = "שומר נתונים..."
+            state["catalog_forms"].pop(kind, None)
             rerender()
 
             def worker() -> None:
@@ -285,37 +278,59 @@ def main(page: ft.Page):
             state["message"] = f"שגיאה בשמירה: {exc}"
             rerender()
 
-    def open_catalog_dialog(kind: str, catalog_df: pd.DataFrame, row_index: int | None = None) -> None:
+    def open_catalog_form(kind: str, row_index: int | None = None) -> None:
+        state["catalog_forms"][kind] = {"row_index": row_index}
+        rerender()
+
+    def close_catalog_form(kind: str) -> None:
+        state["catalog_forms"].pop(kind, None)
+        rerender()
+
+    def render_catalog_form(kind: str, catalog_df: pd.DataFrame) -> ft.Control:
         config_for_kind = get_catalog_config(kind)
-        existing = catalog_df.iloc[row_index] if row_index is not None else None
+        form_state = state["catalog_forms"].get(kind, {})
+        row_index = form_state.get("row_index")
+        existing = catalog_df.iloc[row_index] if row_index is not None and 0 <= row_index < len(catalog_df) else None
         title_field = ft.TextField(
             label=config_for_kind["title_label"],
             value="" if existing is None else str(existing["Title"]),
+            width=320,
         )
         value_field = ft.TextField(
             label=config_for_kind["value_label"],
             keyboard_type=ft.KeyboardType.NUMBER,
             value="" if existing is None else str(int(existing[config_for_kind["value_column"]])),
+            width=130,
         )
 
         def submit(_: ft.ControlEvent | None = None) -> None:
-            close_dialog(dialog)
+            state["catalog_forms"].pop(kind, None)
             save_catalog(kind, catalog_df, title_field.value or "", value_field.value or "", row_index)
 
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(config_for_kind["dialog_title"] if row_index is None else "עדכון פריט"),
-            content=ft.Column([title_field, value_field], tight=True, width=360),
-            actions=[
-                ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton("שמירה", on_click=submit),
-            ],
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(config_for_kind["dialog_title"] if row_index is None else "עדכון פריט", weight=ft.FontWeight.BOLD),
+                    ft.Row([title_field, value_field], wrap=True, spacing=10),
+                    ft.Row(
+                        [
+                            ft.OutlinedButton("ביטול", on_click=lambda _: close_catalog_form(kind)),
+                            ft.ElevatedButton("שמירה", disabled=bool(state["busy"]), on_click=submit),
+                        ],
+                        spacing=8,
+                    ),
+                ],
+                spacing=10,
+            ),
+            padding=12,
+            bgcolor=ft.Colors.GREY_100,
+            border_radius=8,
         )
-        open_dialog(dialog)
 
     def delete_catalog_item(kind: str, catalog_df: pd.DataFrame, row_index: int) -> None:
         config_for_kind = get_catalog_config(kind)
         updated = catalog_df.drop(index=row_index).reset_index(drop=True)
+        state["pending_catalog_delete"].pop(kind, None)
         state["busy"] = True
         state["message"] = "מוחק נתונים..."
         rerender()
@@ -336,23 +351,13 @@ def main(page: ft.Page):
 
         page.run_thread(worker)
 
-    def confirm_delete(kind: str, catalog_df: pd.DataFrame, row_index: int) -> None:
-        title = str(catalog_df.iloc[row_index]["Title"])
+    def request_delete_catalog_item(kind: str, row_index: int) -> None:
+        state["pending_catalog_delete"][kind] = row_index
+        rerender()
 
-        def approve(_: ft.ControlEvent | None = None) -> None:
-            close_dialog(dialog)
-            delete_catalog_item(kind, catalog_df, row_index)
-
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("אישור מחיקה"),
-            content=ft.Text(f"האם למחוק את '{title}'?"),
-            actions=[
-                ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton("מחק", on_click=approve),
-            ],
-        )
-        open_dialog(dialog)
+    def cancel_delete_catalog_item(kind: str) -> None:
+        state["pending_catalog_delete"].pop(kind, None)
+        rerender()
 
     def clear_history(_: ft.ControlEvent | None = None) -> None:
         if state["busy"]:
@@ -568,10 +573,13 @@ def main(page: ft.Page):
             ft.Row(
                 [
                     ft.Text(config_for_kind["tab_label"], size=18, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.ElevatedButton("הוספה", disabled=bool(state["busy"]), on_click=lambda _: open_catalog_dialog(kind, catalog_df)),
+                    ft.ElevatedButton("הוספה", disabled=bool(state["busy"]), on_click=lambda _: open_catalog_form(kind)),
                 ]
             )
         ]
+
+        if kind in state["catalog_forms"]:
+            controls.append(render_catalog_form(kind, catalog_df))
 
         if catalog_df.empty:
             controls.append(ft.Text(config_for_kind["empty_message"], color=ft.Colors.GREY_700))
@@ -579,13 +587,29 @@ def main(page: ft.Page):
 
         rows = []
         for index, row in catalog_df.reset_index(drop=True).iterrows():
+            pending_delete = state["pending_catalog_delete"].get(kind) == index
+            if pending_delete:
+                delete_control = ft.Row(
+                    [
+                        ft.ElevatedButton("אשר", disabled=bool(state["busy"]), on_click=lambda _, i=index: delete_catalog_item(kind, catalog_df, i)),
+                        ft.OutlinedButton("בטל", disabled=bool(state["busy"]), on_click=lambda _: cancel_delete_catalog_item(kind)),
+                    ],
+                    spacing=6,
+                )
+            else:
+                delete_control = ft.IconButton(
+                    ft.Icons.DELETE,
+                    tooltip="מחיקה",
+                    disabled=bool(state["busy"]),
+                    on_click=lambda _, i=index: request_delete_catalog_item(kind, i),
+                )
             rows.append(
                 ft.DataRow(
                     cells=[
                         ft.DataCell(ft.Text(str(row["Title"]))),
                         ft.DataCell(ft.Text(str(int(row[config_for_kind["value_column"]])))),
-                        ft.DataCell(ft.IconButton(ft.Icons.EDIT, tooltip="עדכון", disabled=bool(state["busy"]), on_click=lambda _, i=index: open_catalog_dialog(kind, catalog_df, i))),
-                        ft.DataCell(ft.IconButton(ft.Icons.DELETE, tooltip="מחיקה", disabled=bool(state["busy"]), on_click=lambda _, i=index: confirm_delete(kind, catalog_df, i))),
+                        ft.DataCell(ft.IconButton(ft.Icons.EDIT, tooltip="עדכון", disabled=bool(state["busy"]), on_click=lambda _, i=index: open_catalog_form(kind, i))),
+                        ft.DataCell(delete_control),
                     ]
                 )
             )
