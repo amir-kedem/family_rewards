@@ -1,4 +1,4 @@
-flet
+flet==0.84.0
 google-auth
 gspread
 gspread-dataframe

@@ -36,6 +36,9 @@ if os.getenv("PORT"):
 os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
 DATA_CACHE_TTL_SECONDS = 20
+APP_BUILD = "family-rewards-flet-no-ft-tabs-2026-04-21"
+
+print(f"Starting {APP_BUILD}")
 
 
 def money_or_points(value: int, suffix: str = "נק'") -> str:
