@@ -1,3 +1,7 @@
+flet
+google-auth
+gspread
+gspread-dataframe
 pandas==2.3.3
 st-gsheets-connection==0.1.0
 streamlit==1.56.0

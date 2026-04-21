@@ -16,6 +16,8 @@ from gspread_dataframe import get_as_dataframe, set_with_dataframe
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = ROOT / "app.py"
+FLET_APP_PATH = ROOT / "app_flet.py"
+SRC_PATH = ROOT / "src"
 SECRETS_PATH = ROOT / ".streamlit" / "secrets.toml"
 QA_WORKSHEET = "QA_Check"
 
@@ -32,7 +34,10 @@ def assert_true(condition: bool, message: str):
 
 
 def compile_app():
-    subprocess.run([sys.executable, "-m", "py_compile", str(APP_PATH)], check=True, cwd=ROOT)
+    paths = [APP_PATH, FLET_APP_PATH, *SRC_PATH.rglob("*.py")]
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        compile(source, filename=str(path), mode="exec")
 
 
 def load_symbols() -> dict[str, Any]:
@@ -151,6 +156,7 @@ def test_monthly_goal_logic(env: dict[str, Any]):
 
 def test_source_has_expected_sections():
     source = APP_PATH.read_text(encoding="utf-8")
+    flet_source = FLET_APP_PATH.read_text(encoding="utf-8")
     required_tokens = [
         "BEHAVIOR_WORKSHEET",
         "EDUCATION_WORKSHEET",
@@ -160,6 +166,15 @@ def test_source_has_expected_sections():
     ]
     for token in required_tokens:
         assert_true(token in source, f"missing expected app section: {token}")
+
+    migration_tokens = [
+        "from point_system.service import create_service",
+        "ft.run(main)",
+        "render_admin_tabs",
+        "render_child_tabs",
+    ]
+    for token in migration_tokens:
+        assert_true(token in flet_source, f"missing expected Flet app section: {token}")
 
 
 def load_local_gsheets_config() -> dict[str, Any]:

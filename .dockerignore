@@ -1,0 +1,10 @@
+.git
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+venv/
+env/
+ENV/
+.venv/
+.devcontainer/
+MIGRATION_TODO.md
