@@ -5,10 +5,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$flet = Join-Path $root "venv\Scripts\flet.exe"
+$python = Join-Path $root "venv\Scripts\python.exe"
 
-if (-not (Test-Path $flet)) {
-    throw "Flet executable not found at $flet. Run: .\venv\Scripts\python.exe -m pip install -r requirements.txt"
+if (-not (Test-Path $python)) {
+    throw "Python virtualenv not found at $python"
 }
 
-& $flet run --web --port $Port (Join-Path $root "app_flet.py")
+$env:FLET_FORCE_WEB_SERVER = "true"
+$env:FLET_SERVER_IP = "127.0.0.1"
+$env:FLET_SERVER_PORT = "$Port"
+
+& $python (Join-Path $root "app_flet.py")

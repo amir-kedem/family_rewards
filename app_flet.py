@@ -39,10 +39,6 @@ def money_or_points(value: int, suffix: str = "נק'") -> str:
     return f"{int(value)} {suffix}"
 
 
-def app_tab(label: str, content: ft.Control) -> ft.Tab:
-    return ft.Tab(tab_content=ft.Text(label), content=content)
-
-
 def main(page: ft.Page):
     page.title = "הבית המשותף שלנו"
     page.scroll = ft.ScrollMode.AUTO
@@ -55,6 +51,7 @@ def main(page: ft.Page):
         "active_user": None,
         "last_action": None,
         "selected_users": {},
+        "selected_tabs": {},
         "message": None,
     }
     data: dict[str, object] = {}
@@ -133,6 +130,28 @@ def main(page: ft.Page):
         fallback = state["active_user"] if state["active_user"] in members else members[0]
         state["selected_users"][kind] = fallback
         return fallback
+
+    def render_tab_switcher(tab_key: str, tabs: list[tuple[str, ft.Control]]) -> ft.Control:
+        selected = int(state["selected_tabs"].get(tab_key, 0))
+        selected = min(max(selected, 0), len(tabs) - 1)
+        state["selected_tabs"][tab_key] = selected
+
+        def set_tab(index: int) -> None:
+            state["selected_tabs"][tab_key] = index
+            rerender()
+
+        buttons: list[ft.Control] = []
+        for index, (label, _) in enumerate(tabs):
+            button_cls = ft.ElevatedButton if index == selected else ft.OutlinedButton
+            buttons.append(button_cls(label, on_click=lambda _, idx=index: set_tab(idx)))
+
+        return ft.Column(
+            [
+                ft.Row(buttons, wrap=True, spacing=8, run_spacing=8),
+                ft.Container(content=tabs[selected][1], padding=ft.padding.only(top=12)),
+            ],
+            spacing=8,
+        )
 
     def login_child(user_name: str) -> None:
         if user_name not in data["members_df"]["Name"].tolist():
@@ -563,22 +582,20 @@ def main(page: ft.Page):
         return ft.Column(
             [
                 undo,
-                ft.Tabs(
-                    selected_index=0,
-                    animation_duration=180,
-                    tabs=[
-                        app_tab("מטלות", render_task_panel("chores", data["chores_df"], True)),
-                        app_tab("התנהגות", render_task_panel("behavior", data["behavior_df"], True)),
-                        app_tab("לימוד", render_task_panel("education", data["education_df"], True)),
-                        app_tab("פרסים", render_prizes_panel()),
-                        app_tab("ניהול מטלות", render_catalog_panel("chores", data["chores_df"])),
-                        app_tab("ניהול התנהגות", render_catalog_panel("behavior", data["behavior_df"])),
-                        app_tab("ניהול לימוד", render_catalog_panel("education", data["education_df"])),
-                        app_tab("ניהול פרסים", render_catalog_panel("prizes", data["prizes_df"])),
-                        app_tab("תבנית התחלה", ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
-                        app_tab("היסטוריה", render_history_panel()),
+                render_tab_switcher(
+                    "admin",
+                    [
+                        ("מטלות", render_task_panel("chores", data["chores_df"], True)),
+                        ("התנהגות", render_task_panel("behavior", data["behavior_df"], True)),
+                        ("לימוד", render_task_panel("education", data["education_df"], True)),
+                        ("פרסים", render_prizes_panel()),
+                        ("ניהול מטלות", render_catalog_panel("chores", data["chores_df"])),
+                        ("ניהול התנהגות", render_catalog_panel("behavior", data["behavior_df"])),
+                        ("ניהול לימוד", render_catalog_panel("education", data["education_df"])),
+                        ("ניהול פרסים", render_catalog_panel("prizes", data["prizes_df"])),
+                        ("תבנית התחלה", ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
+                        ("היסטוריה", render_history_panel()),
                     ],
-                    expand=1,
                 ),
             ],
             spacing=12,
@@ -587,15 +604,13 @@ def main(page: ft.Page):
     def render_child_tabs() -> ft.Control:
         if state["active_user"] not in data["members_df"]["Name"].tolist():
             return ft.Text(f"המשתמש {state['active_user']} לא נמצא בגיליון Members.", color=ft.Colors.RED)
-        return ft.Tabs(
-            selected_index=0,
-            animation_duration=180,
-            tabs=[
-                app_tab("מטלות", render_task_panel("chores", data["chores_df"], False)),
-                app_tab("התנהגות", render_task_panel("behavior", data["behavior_df"], False)),
-                app_tab("לימוד", render_task_panel("education", data["education_df"], False)),
+        return render_tab_switcher(
+            "child",
+            [
+                ("מטלות", render_task_panel("chores", data["chores_df"], False)),
+                ("התנהגות", render_task_panel("behavior", data["behavior_df"], False)),
+                ("לימוד", render_task_panel("education", data["education_df"], False)),
             ],
-            expand=1,
         )
 
     rerender()
