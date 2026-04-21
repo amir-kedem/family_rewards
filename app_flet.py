@@ -36,7 +36,7 @@ if os.getenv("PORT"):
 os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
 DATA_CACHE_TTL_SECONDS = 20
-APP_BUILD = "family-rewards-flet-no-ft-tabs-2026-04-21"
+APP_BUILD = "family-rewards-flet-inline-catalog-buttons-2026-04-21"
 
 print(f"Starting {APP_BUILD}")
 
@@ -61,6 +61,7 @@ def main(page: ft.Page):
         "message": None,
         "busy": False,
         "catalog_forms": {},
+        "catalog_form_values": {},
         "pending_catalog_delete": {},
     }
     data: dict[str, object] = {}
@@ -280,10 +281,26 @@ def main(page: ft.Page):
 
     def open_catalog_form(kind: str, row_index: int | None = None) -> None:
         state["catalog_forms"][kind] = {"row_index": row_index}
+        catalog_df = {
+            "chores": data.get("chores_df"),
+            "behavior": data.get("behavior_df"),
+            "education": data.get("education_df"),
+            "prizes": data.get("prizes_df"),
+        }.get(kind)
+        config_for_kind = get_catalog_config(kind)
+        if row_index is not None and catalog_df is not None and 0 <= row_index < len(catalog_df):
+            existing = catalog_df.iloc[row_index]
+            state["catalog_form_values"][kind] = {
+                "title": str(existing["Title"]),
+                "value": str(int(existing[config_for_kind["value_column"]])),
+            }
+        else:
+            state["catalog_form_values"][kind] = {"title": "", "value": ""}
         rerender()
 
     def close_catalog_form(kind: str) -> None:
         state["catalog_forms"].pop(kind, None)
+        state["catalog_form_values"].pop(kind, None)
         rerender()
 
     def render_catalog_form(kind: str, catalog_df: pd.DataFrame) -> ft.Control:
@@ -291,21 +308,44 @@ def main(page: ft.Page):
         form_state = state["catalog_forms"].get(kind, {})
         row_index = form_state.get("row_index")
         existing = catalog_df.iloc[row_index] if row_index is not None and 0 <= row_index < len(catalog_df) else None
+        form_values = state["catalog_form_values"].setdefault(
+            kind,
+            {
+                "title": "" if existing is None else str(existing["Title"]),
+                "value": "" if existing is None else str(int(existing[config_for_kind["value_column"]])),
+            },
+        )
+
+        def update_title(event: ft.ControlEvent) -> None:
+            form_values["title"] = event.control.value or ""
+
+        def update_value(event: ft.ControlEvent) -> None:
+            form_values["value"] = event.control.value or ""
+
         title_field = ft.TextField(
             label=config_for_kind["title_label"],
-            value="" if existing is None else str(existing["Title"]),
+            value=form_values.get("title", ""),
+            on_change=update_title,
             width=320,
         )
         value_field = ft.TextField(
             label=config_for_kind["value_label"],
             keyboard_type=ft.KeyboardType.NUMBER,
-            value="" if existing is None else str(int(existing[config_for_kind["value_column"]])),
+            value=form_values.get("value", ""),
+            on_change=update_value,
             width=130,
         )
 
         def submit(_: ft.ControlEvent | None = None) -> None:
             state["catalog_forms"].pop(kind, None)
-            save_catalog(kind, catalog_df, title_field.value or "", value_field.value or "", row_index)
+            state["catalog_form_values"].pop(kind, None)
+            save_catalog(
+                kind,
+                catalog_df,
+                form_values.get("title", ""),
+                form_values.get("value", ""),
+                row_index,
+            )
 
         return ft.Container(
             content=ft.Column(
@@ -585,7 +625,17 @@ def main(page: ft.Page):
             controls.append(ft.Text(config_for_kind["empty_message"], color=ft.Colors.GREY_700))
             return ft.Column(controls, spacing=12)
 
-        rows = []
+        catalog_rows: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Text("שם", weight=ft.FontWeight.BOLD, expand=True),
+                    ft.Text(config_for_kind["value_label"], weight=ft.FontWeight.BOLD, width=80),
+                    ft.Text("", width=80),
+                    ft.Text("", width=130),
+                ],
+                spacing=8,
+            )
+        ]
         for index, row in catalog_df.reset_index(drop=True).iterrows():
             pending_delete = state["pending_catalog_delete"].get(kind) == index
             if pending_delete:
@@ -597,33 +647,28 @@ def main(page: ft.Page):
                     spacing=6,
                 )
             else:
-                delete_control = ft.IconButton(
-                    ft.Icons.DELETE,
-                    tooltip="מחיקה",
+                delete_control = ft.OutlinedButton(
+                    "מחיקה",
                     disabled=bool(state["busy"]),
                     on_click=lambda _, i=index: request_delete_catalog_item(kind, i),
                 )
-            rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(row["Title"]))),
-                        ft.DataCell(ft.Text(str(int(row[config_for_kind["value_column"]])))),
-                        ft.DataCell(ft.IconButton(ft.Icons.EDIT, tooltip="עדכון", disabled=bool(state["busy"]), on_click=lambda _, i=index: open_catalog_form(kind, i))),
-                        ft.DataCell(delete_control),
-                    ]
+            catalog_rows.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Text(str(row["Title"]), expand=True),
+                            ft.Text(str(int(row[config_for_kind["value_column"]])), width=80),
+                            ft.OutlinedButton("עדכון", disabled=bool(state["busy"]), on_click=lambda _, i=index: open_catalog_form(kind, i)),
+                            delete_control,
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=8,
+                    border=ft.border.only(bottom=ft.BorderSide(1, ft.Colors.GREY_300)),
                 )
             )
-        controls.append(
-            ft.DataTable(
-                columns=[
-                    ft.DataColumn(ft.Text("שם")),
-                    ft.DataColumn(ft.Text(config_for_kind["value_label"])),
-                    ft.DataColumn(ft.Text("")),
-                    ft.DataColumn(ft.Text("")),
-                ],
-                rows=rows,
-            )
-        )
+        controls.append(ft.Column(catalog_rows, spacing=0))
         return ft.Column(controls, spacing=12)
 
     def render_history_panel() -> ft.Control:
