@@ -59,6 +59,7 @@ def main(page: ft.Page):
         "selected_users": {},
         "selected_tabs": {},
         "message": None,
+        "busy": False,
     }
     data: dict[str, object] = {}
     data_cache: dict[str, object] = {"loaded_at": None}
@@ -187,36 +188,37 @@ def main(page: ft.Page):
         rerender()
 
     def update_points(user_name: str, points: int, action_label: str, remember: bool = True) -> None:
-        try:
-            last_action = service.update_member_points(
-                data["members_df"],
-                data["members_target"],
-                user_name,
-                points,
-                action_label,
-            )
-            state["last_action"] = last_action if remember else None
-            show_message("פעולה עודכנה")
-            rerender(force_refresh=True)
-        except SheetAccessError as exc:
-            render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+        if state["busy"]:
+            return
 
-    def confirm_update(user_name: str, points: int, action_label: str) -> None:
-        def approve(_: ft.ControlEvent | None = None) -> None:
-            close_dialog(dialog)
-            update_points(user_name, points, action_label)
+        members_snapshot = data["members_df"].copy()
+        members_target = data["members_target"]
+        state["busy"] = True
+        state["message"] = "מעדכן נתונים..."
+        rerender()
 
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("אישור פעולה"),
-            content=ft.Text(f"{action_label}\n{money_or_points(points)} עבור {user_name}"),
-            actions=[
-                ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton("אישור", on_click=approve),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        open_dialog(dialog)
+        def worker() -> None:
+            try:
+                last_action = service.update_member_points(
+                    members_snapshot,
+                    members_target,
+                    user_name,
+                    points,
+                    action_label,
+                )
+                state["last_action"] = last_action if remember else None
+                state["message"] = "פעולה עודכנה"
+                state["busy"] = False
+                rerender(force_refresh=True)
+            except SheetAccessError as exc:
+                state["busy"] = False
+                render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+            except Exception as exc:
+                state["busy"] = False
+                state["message"] = f"שגיאה בעדכון: {exc}"
+                rerender()
+
+        page.run_thread(worker)
 
     def undo_last(_: ft.ControlEvent | None = None) -> None:
         if not state["last_action"]:
@@ -259,11 +261,29 @@ def main(page: ft.Page):
                 updated.at[row_index, config_for_kind["value_column"]] = clean_value
 
         try:
-            service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
-            show_message("פעולה עודכנה")
-            rerender(force_refresh=True)
-        except SheetAccessError as exc:
-            render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+            state["busy"] = True
+            state["message"] = "שומר נתונים..."
+            rerender()
+
+            def worker() -> None:
+                try:
+                    service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
+                    state["message"] = "פעולה עודכנה"
+                    state["busy"] = False
+                    rerender(force_refresh=True)
+                except SheetAccessError as exc:
+                    state["busy"] = False
+                    render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+                except Exception as exc:
+                    state["busy"] = False
+                    state["message"] = f"שגיאה בשמירה: {exc}"
+                    rerender()
+
+            page.run_thread(worker)
+        except Exception as exc:
+            state["busy"] = False
+            state["message"] = f"שגיאה בשמירה: {exc}"
+            rerender()
 
     def open_catalog_dialog(kind: str, catalog_df: pd.DataFrame, row_index: int | None = None) -> None:
         config_for_kind = get_catalog_config(kind)
@@ -296,12 +316,25 @@ def main(page: ft.Page):
     def delete_catalog_item(kind: str, catalog_df: pd.DataFrame, row_index: int) -> None:
         config_for_kind = get_catalog_config(kind)
         updated = catalog_df.drop(index=row_index).reset_index(drop=True)
-        try:
-            service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
-            show_message("פעולה עודכנה")
-            rerender(force_refresh=True)
-        except SheetAccessError as exc:
-            render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+        state["busy"] = True
+        state["message"] = "מוחק נתונים..."
+        rerender()
+
+        def worker() -> None:
+            try:
+                service.save_catalog(config_for_kind["worksheet"], config_for_kind["value_column"], updated)
+                state["message"] = "פעולה עודכנה"
+                state["busy"] = False
+                rerender(force_refresh=True)
+            except SheetAccessError as exc:
+                state["busy"] = False
+                render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+            except Exception as exc:
+                state["busy"] = False
+                state["message"] = f"שגיאה במחיקה: {exc}"
+                rerender()
+
+        page.run_thread(worker)
 
     def confirm_delete(kind: str, catalog_df: pd.DataFrame, row_index: int) -> None:
         title = str(catalog_df.iloc[row_index]["Title"])
@@ -322,20 +355,51 @@ def main(page: ft.Page):
         open_dialog(dialog)
 
     def clear_history(_: ft.ControlEvent | None = None) -> None:
-        try:
-            service.clear_history()
-            show_message("ההיסטוריה נמחקה")
-            rerender(force_refresh=True)
-        except SheetAccessError as exc:
-            render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+        if state["busy"]:
+            return
+        state["busy"] = True
+        state["message"] = "מנקה היסטוריה..."
+        rerender()
+
+        def worker() -> None:
+            try:
+                service.clear_history()
+                state["message"] = "ההיסטוריה נמחקה"
+                state["busy"] = False
+                rerender(force_refresh=True)
+            except SheetAccessError as exc:
+                state["busy"] = False
+                render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+            except Exception as exc:
+                state["busy"] = False
+                state["message"] = f"שגיאה בניקוי היסטוריה: {exc}"
+                rerender()
+
+        page.run_thread(worker)
 
     def load_starter_template(_: ft.ControlEvent | None = None) -> None:
-        try:
-            service.load_starter_template(data["members_df"])
-            show_message("תבנית ההתחלה נטענה")
-            rerender(force_refresh=True)
-        except SheetAccessError as exc:
-            render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+        if state["busy"]:
+            return
+        members_snapshot = data["members_df"].copy()
+        state["busy"] = True
+        state["message"] = "טוען תבנית התחלה..."
+        rerender()
+
+        def worker() -> None:
+            try:
+                service.load_starter_template(members_snapshot)
+                state["message"] = "תבנית ההתחלה נטענה"
+                state["busy"] = False
+                rerender(force_refresh=True)
+            except SheetAccessError as exc:
+                state["busy"] = False
+                render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
+            except Exception as exc:
+                state["busy"] = False
+                state["message"] = f"שגיאה בטעינת תבנית: {exc}"
+                rerender()
+
+        page.run_thread(worker)
 
     def render_top_bar() -> ft.Control:
         controls: list[ft.Control] = [
@@ -344,6 +408,10 @@ def main(page: ft.Page):
         if state["role"]:
             subtitle = "לוח בקרה להורה" if state["role"] == "admin" else f"שלום {state['active_user']}"
             controls.append(ft.Text(subtitle, size=16, color=ft.Colors.GREY_700))
+        if state["message"]:
+            controls.append(ft.Text(str(state["message"]), size=14, color=ft.Colors.BLUE_700))
+        if state["busy"]:
+            controls.append(ft.ProgressBar(width=260))
         return ft.Row(
             controls=[
                 ft.Column(controls, spacing=2, expand=True),
@@ -457,7 +525,8 @@ def main(page: ft.Page):
                     ),
                     width=180,
                     height=78,
-                    on_click=lambda _, user=user_name, pts=points, action=action_label: confirm_update(user, pts, action),
+                    disabled=bool(state["busy"]),
+                    on_click=lambda _, user=user_name, pts=points, action=action_label: update_points(user, pts, action),
                 )
             )
 
@@ -486,8 +555,8 @@ def main(page: ft.Page):
                     ),
                     width=190,
                     height=78,
-                    disabled=disabled,
-                    on_click=lambda _, user=user_name, cost=price, prize=title: confirm_update(user, -cost, f"מימוש {prize}"),
+                    disabled=disabled or bool(state["busy"]),
+                    on_click=lambda _, user=user_name, cost=price, prize=title: update_points(user, -cost, f"מימוש {prize}"),
                 )
             )
         controls.append(ft.Row(prize_buttons, wrap=True, spacing=10, run_spacing=10))
@@ -499,7 +568,7 @@ def main(page: ft.Page):
             ft.Row(
                 [
                     ft.Text(config_for_kind["tab_label"], size=18, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.ElevatedButton("הוספה", on_click=lambda _: open_catalog_dialog(kind, catalog_df)),
+                    ft.ElevatedButton("הוספה", disabled=bool(state["busy"]), on_click=lambda _: open_catalog_dialog(kind, catalog_df)),
                 ]
             )
         ]
@@ -515,8 +584,8 @@ def main(page: ft.Page):
                     cells=[
                         ft.DataCell(ft.Text(str(row["Title"]))),
                         ft.DataCell(ft.Text(str(int(row[config_for_kind["value_column"]])))),
-                        ft.DataCell(ft.IconButton(ft.Icons.EDIT, tooltip="עדכון", on_click=lambda _, i=index: open_catalog_dialog(kind, catalog_df, i))),
-                        ft.DataCell(ft.IconButton(ft.Icons.DELETE, tooltip="מחיקה", on_click=lambda _, i=index: confirm_delete(kind, catalog_df, i))),
+                        ft.DataCell(ft.IconButton(ft.Icons.EDIT, tooltip="עדכון", disabled=bool(state["busy"]), on_click=lambda _, i=index: open_catalog_dialog(kind, catalog_df, i))),
+                        ft.DataCell(ft.IconButton(ft.Icons.DELETE, tooltip="מחיקה", disabled=bool(state["busy"]), on_click=lambda _, i=index: confirm_delete(kind, catalog_df, i))),
                     ]
                 )
             )
@@ -570,7 +639,7 @@ def main(page: ft.Page):
                 ft.Row(
                     [
                         ft.Text("היסטוריית פעולות", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.ElevatedButton("נקה היסטוריה", on_click=clear_history),
+                        ft.ElevatedButton("נקה היסטוריה", disabled=bool(state["busy"]), on_click=clear_history),
                     ]
                 ),
                 table,
@@ -584,7 +653,7 @@ def main(page: ft.Page):
             undo = ft.Row(
                 [
                     ft.Text(f"פעולה אחרונה: {last_label} ל-{last_user} ({last_points} נק')", expand=True),
-                    ft.OutlinedButton("בטל פעולה אחרונה", on_click=undo_last),
+                    ft.OutlinedButton("בטל פעולה אחרונה", disabled=bool(state["busy"]), on_click=undo_last),
                 ],
                 wrap=True,
             )
@@ -605,7 +674,7 @@ def main(page: ft.Page):
                         ("ניהול התנהגות", lambda: render_catalog_panel("behavior", data["behavior_df"])),
                         ("ניהול לימוד", lambda: render_catalog_panel("education", data["education_df"])),
                         ("ניהול פרסים", lambda: render_catalog_panel("prizes", data["prizes_df"])),
-                        ("תבנית התחלה", lambda: ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
+                        ("תבנית התחלה", lambda: ft.ElevatedButton("טעינת תבנית התחלתית", disabled=bool(state["busy"]), on_click=load_starter_template)),
                         ("היסטוריה", render_history_panel),
                     ],
                 ),
