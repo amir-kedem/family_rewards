@@ -72,23 +72,20 @@ def main(page: ft.Page):
 
     def show_message(message: str) -> None:
         state["message"] = message
-        page.snack_bar = ft.SnackBar(ft.Text(message), open=True)
+        snack_bar = ft.SnackBar(ft.Text(message), open=True)
+        page.overlay.append(snack_bar)
         page.update()
 
     def open_dialog(dialog: ft.AlertDialog) -> None:
-        if hasattr(page, "open"):
-            page.open(dialog)
-        else:
-            page.dialog = dialog
-            dialog.open = True
-            page.update()
+        dialog.open = True
+        page.overlay.append(dialog)
+        page.update()
 
     def close_dialog(dialog: ft.AlertDialog) -> None:
-        if hasattr(page, "close"):
-            page.close(dialog)
-        else:
-            dialog.open = False
-            page.update()
+        dialog.open = False
+        if dialog in page.overlay:
+            page.overlay.remove(dialog)
+        page.update()
 
     def refresh_data(force: bool = False) -> bool:
         loaded_at = data_cache.get("loaded_at")
@@ -144,7 +141,7 @@ def main(page: ft.Page):
         state["selected_users"][kind] = fallback
         return fallback
 
-    def render_tab_switcher(tab_key: str, tabs: list[tuple[str, ft.Control]]) -> ft.Control:
+    def render_tab_switcher(tab_key: str, tabs: list[tuple[str, callable]]) -> ft.Control:
         selected = int(state["selected_tabs"].get(tab_key, 0))
         selected = min(max(selected, 0), len(tabs) - 1)
         state["selected_tabs"][tab_key] = selected
@@ -158,10 +155,11 @@ def main(page: ft.Page):
             button_cls = ft.ElevatedButton if index == selected else ft.OutlinedButton
             buttons.append(button_cls(label, on_click=lambda _, idx=index: set_tab(idx)))
 
+        selected_content = tabs[selected][1]()
         return ft.Column(
             [
                 ft.Row(buttons, wrap=True, spacing=8, run_spacing=8),
-                ft.Container(content=tabs[selected][1], padding=ft.padding.only(top=12)),
+                ft.Container(content=selected_content, padding=ft.padding.only(top=12)),
             ],
             spacing=8,
         )
@@ -598,16 +596,16 @@ def main(page: ft.Page):
                 render_tab_switcher(
                     "admin",
                     [
-                        ("מטלות", render_task_panel("chores", data["chores_df"], True)),
-                        ("התנהגות", render_task_panel("behavior", data["behavior_df"], True)),
-                        ("לימוד", render_task_panel("education", data["education_df"], True)),
-                        ("פרסים", render_prizes_panel()),
-                        ("ניהול מטלות", render_catalog_panel("chores", data["chores_df"])),
-                        ("ניהול התנהגות", render_catalog_panel("behavior", data["behavior_df"])),
-                        ("ניהול לימוד", render_catalog_panel("education", data["education_df"])),
-                        ("ניהול פרסים", render_catalog_panel("prizes", data["prizes_df"])),
-                        ("תבנית התחלה", ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
-                        ("היסטוריה", render_history_panel()),
+                        ("מטלות", lambda: render_task_panel("chores", data["chores_df"], True)),
+                        ("התנהגות", lambda: render_task_panel("behavior", data["behavior_df"], True)),
+                        ("לימוד", lambda: render_task_panel("education", data["education_df"], True)),
+                        ("פרסים", render_prizes_panel),
+                        ("ניהול מטלות", lambda: render_catalog_panel("chores", data["chores_df"])),
+                        ("ניהול התנהגות", lambda: render_catalog_panel("behavior", data["behavior_df"])),
+                        ("ניהול לימוד", lambda: render_catalog_panel("education", data["education_df"])),
+                        ("ניהול פרסים", lambda: render_catalog_panel("prizes", data["prizes_df"])),
+                        ("תבנית התחלה", lambda: ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
+                        ("היסטוריה", render_history_panel),
                     ],
                 ),
             ],
@@ -620,9 +618,9 @@ def main(page: ft.Page):
         return render_tab_switcher(
             "child",
             [
-                ("מטלות", render_task_panel("chores", data["chores_df"], False)),
-                ("התנהגות", render_task_panel("behavior", data["behavior_df"], False)),
-                ("לימוד", render_task_panel("education", data["education_df"], False)),
+                ("מטלות", lambda: render_task_panel("chores", data["chores_df"], False)),
+                ("התנהגות", lambda: render_task_panel("behavior", data["behavior_df"], False)),
+                ("לימוד", lambda: render_task_panel("education", data["education_df"], False)),
             ],
         )
 
