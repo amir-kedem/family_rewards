@@ -78,13 +78,12 @@ def main(page: ft.Page):
 
     def open_dialog(dialog: ft.AlertDialog) -> None:
         dialog.open = True
-        page.overlay.append(dialog)
+        if dialog not in page.overlay:
+            page.overlay.append(dialog)
         page.update()
 
     def close_dialog(dialog: ft.AlertDialog) -> None:
         dialog.open = False
-        if dialog in page.overlay:
-            page.overlay.remove(dialog)
         page.update()
 
     def refresh_data(force: bool = False) -> bool:
@@ -203,16 +202,17 @@ def main(page: ft.Page):
             render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
 
     def confirm_update(user_name: str, points: int, action_label: str) -> None:
+        def approve(_: ft.ControlEvent | None = None) -> None:
+            close_dialog(dialog)
+            update_points(user_name, points, action_label)
+
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("אישור פעולה"),
             content=ft.Text(f"{action_label}\n{money_or_points(points)} עבור {user_name}"),
             actions=[
                 ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton(
-                    "אישור",
-                    on_click=lambda _: (close_dialog(dialog), update_points(user_name, points, action_label)),
-                ),
+                ft.ElevatedButton("אישור", on_click=approve),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -277,19 +277,18 @@ def main(page: ft.Page):
             keyboard_type=ft.KeyboardType.NUMBER,
             value="" if existing is None else str(int(existing[config_for_kind["value_column"]])),
         )
+
+        def submit(_: ft.ControlEvent | None = None) -> None:
+            close_dialog(dialog)
+            save_catalog(kind, catalog_df, title_field.value or "", value_field.value or "", row_index)
+
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text(config_for_kind["dialog_title"] if row_index is None else "עדכון פריט"),
             content=ft.Column([title_field, value_field], tight=True, width=360),
             actions=[
                 ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton(
-                    "שמירה",
-                    on_click=lambda _: (
-                        close_dialog(dialog),
-                        save_catalog(kind, catalog_df, title_field.value or "", value_field.value or "", row_index),
-                    ),
-                ),
+                ft.ElevatedButton("שמירה", on_click=submit),
             ],
         )
         open_dialog(dialog)
@@ -306,16 +305,18 @@ def main(page: ft.Page):
 
     def confirm_delete(kind: str, catalog_df: pd.DataFrame, row_index: int) -> None:
         title = str(catalog_df.iloc[row_index]["Title"])
+
+        def approve(_: ft.ControlEvent | None = None) -> None:
+            close_dialog(dialog)
+            delete_catalog_item(kind, catalog_df, row_index)
+
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("אישור מחיקה"),
             content=ft.Text(f"האם למחוק את '{title}'?"),
             actions=[
                 ft.TextButton("ביטול", on_click=lambda _: close_dialog(dialog)),
-                ft.ElevatedButton(
-                    "מחק",
-                    on_click=lambda _: (close_dialog(dialog), delete_catalog_item(kind, catalog_df, row_index)),
-                ),
+                ft.ElevatedButton("מחק", on_click=approve),
             ],
         )
         open_dialog(dialog)
