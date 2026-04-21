@@ -39,6 +39,10 @@ def money_or_points(value: int, suffix: str = "נק'") -> str:
     return f"{int(value)} {suffix}"
 
 
+def app_tab(label: str, content: ft.Control) -> ft.Tab:
+    return ft.Tab(tab_content=ft.Text(label), content=content)
+
+
 def main(page: ft.Page):
     page.title = "הבית המשותף שלנו"
     page.scroll = ft.ScrollMode.AUTO
@@ -563,16 +567,16 @@ def main(page: ft.Page):
                     selected_index=0,
                     animation_duration=180,
                     tabs=[
-                        ft.Tab(text="מטלות", content=render_task_panel("chores", data["chores_df"], True)),
-                        ft.Tab(text="התנהגות", content=render_task_panel("behavior", data["behavior_df"], True)),
-                        ft.Tab(text="לימוד", content=render_task_panel("education", data["education_df"], True)),
-                        ft.Tab(text="פרסים", content=render_prizes_panel()),
-                        ft.Tab(text="ניהול מטלות", content=render_catalog_panel("chores", data["chores_df"])),
-                        ft.Tab(text="ניהול התנהגות", content=render_catalog_panel("behavior", data["behavior_df"])),
-                        ft.Tab(text="ניהול לימוד", content=render_catalog_panel("education", data["education_df"])),
-                        ft.Tab(text="ניהול פרסים", content=render_catalog_panel("prizes", data["prizes_df"])),
-                        ft.Tab(text="תבנית התחלה", content=ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
-                        ft.Tab(text="היסטוריה", content=render_history_panel()),
+                        app_tab("מטלות", render_task_panel("chores", data["chores_df"], True)),
+                        app_tab("התנהגות", render_task_panel("behavior", data["behavior_df"], True)),
+                        app_tab("לימוד", render_task_panel("education", data["education_df"], True)),
+                        app_tab("פרסים", render_prizes_panel()),
+                        app_tab("ניהול מטלות", render_catalog_panel("chores", data["chores_df"])),
+                        app_tab("ניהול התנהגות", render_catalog_panel("behavior", data["behavior_df"])),
+                        app_tab("ניהול לימוד", render_catalog_panel("education", data["education_df"])),
+                        app_tab("ניהול פרסים", render_catalog_panel("prizes", data["prizes_df"])),
+                        app_tab("תבנית התחלה", ft.ElevatedButton("טעינת תבנית התחלתית", on_click=load_starter_template)),
+                        app_tab("היסטוריה", render_history_panel()),
                     ],
                     expand=1,
                 ),
@@ -587,9 +591,9 @@ def main(page: ft.Page):
             selected_index=0,
             animation_duration=180,
             tabs=[
-                ft.Tab(text="מטלות", content=render_task_panel("chores", data["chores_df"], False)),
-                ft.Tab(text="התנהגות", content=render_task_panel("behavior", data["behavior_df"], False)),
-                ft.Tab(text="לימוד", content=render_task_panel("education", data["education_df"], False)),
+                app_tab("מטלות", render_task_panel("chores", data["chores_df"], False)),
+                app_tab("התנהגות", render_task_panel("behavior", data["behavior_df"], False)),
+                app_tab("לימוד", render_task_panel("education", data["education_df"], False)),
             ],
             expand=1,
         )
