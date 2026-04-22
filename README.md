@@ -6,15 +6,16 @@ A gamified task and reward system designed to drive behavior and accountability 
 
 [View Project](https://github.com/amir-kedem/family_rewards)
 
-## Platform Shift
+## Platform
 
-The app is moving from Streamlit to Flet dynamic web. During the transition, both entry points can use the same Google Sheets workbook and worksheet schema.
+The app now targets Flet dynamic web as the active UI. Streamlit was useful for the trial run because it made the first Google Sheets workflow quick to build and validate, but it is not the right path for continued use. The need for a more app-like, controllable interface was the incentive to transition to Flet.
 
-## Run Streamlit
+The current production path is:
 
-```powershell
-.\scripts\run_streamlit.ps1
-```
+- `app_flet.py` for the Flet web app.
+- `src/point_system/` for shared data cleaning, Google Sheets access, and point-system service logic.
+- Google Sheets worksheets for persistent data: `Members`, `Chores`, `Behavior`, `Education`, `Prizes`, `History`, and `MonthlyLedger`.
+- `MIGRATION_TODO.md` as the working checklist for continuing the migration and tracking remaining cleanup.
 
 ## Run Flet Web
 
@@ -27,6 +28,27 @@ Use a custom port if needed:
 ```powershell
 .\scripts\run_flet_web.ps1 -Port 8001
 ```
+
+## Change Process
+
+Continue changes from `MIGRATION_TODO.md`:
+
+1. Pick the next unchecked migration item.
+2. Move shared behavior into `src/point_system/` when it belongs to the backend/service layer.
+3. Keep UI behavior in `app_flet.py`.
+4. Run the QA script after each meaningful backend or workflow change:
+
+```powershell
+.\venv\Scripts\python.exe scripts\predeploy_check.py
+```
+
+For a live Google Sheets workflow check that does not touch the real production tabs, run:
+
+```powershell
+.\venv\Scripts\python.exe scripts\predeploy_check.py --live-action-qa
+```
+
+That live QA command writes only to isolated QA worksheets: `QA_Members`, `QA_History`, and `QA_MonthlyLedger`.
 
 ## Deploy Flet To A Web Server
 

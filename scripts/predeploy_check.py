@@ -20,6 +20,9 @@ FLET_APP_PATH = ROOT / "app_flet.py"
 SRC_PATH = ROOT / "src"
 SECRETS_PATH = ROOT / ".streamlit" / "secrets.toml"
 QA_WORKSHEET = "QA_Check"
+QA_MEMBERS_WORKSHEET = "QA_Members"
+QA_HISTORY_WORKSHEET = "QA_History"
+QA_MONTHLY_LEDGER_WORKSHEET = "QA_MonthlyLedger"
 
 
 def run_step(name: str, fn):
@@ -172,6 +175,71 @@ def test_monthly_goal_logic(env: dict[str, Any]):
     assert_true(total == 15, f"monthly goal should count earned points minus undo and exclude prizes, got {total}")
 
 
+class InMemoryStore:
+    def __init__(self, sheets: dict[str | int, pd.DataFrame], corrupt_next_members_write: bool = False):
+        self.sheets = {name: df.copy() for name, df in sheets.items()}
+        self.corrupt_next_members_write = corrupt_next_members_write
+
+    def read_worksheet(self, worksheet: str | int) -> pd.DataFrame:
+        return self.sheets[worksheet].copy()
+
+    def write_worksheet(self, worksheet: str | int, data: pd.DataFrame) -> None:
+        written = data.copy()
+        if worksheet == "Members" and self.corrupt_next_members_write:
+            self.corrupt_next_members_write = False
+            written.loc[written["Name"] == "QA User", "Points"] = 999
+        self.sheets[worksheet] = written
+
+    def create_worksheet(self, worksheet: str, data: pd.DataFrame) -> None:
+        self.sheets[worksheet] = data.copy()
+
+
+def test_point_update_flow():
+    if str(SRC_PATH) not in sys.path:
+        sys.path.insert(0, str(SRC_PATH))
+
+    from point_system.constants import EMPTY_HISTORY, EMPTY_MONTHLY_LEDGER
+    from point_system.service import ActionValidationError, PointSystemService
+
+    stale_members = pd.DataFrame([{"Name": "QA User", "Points": 5}])
+    store = InMemoryStore(
+        {
+            "Members": pd.DataFrame([{"Name": "QA User", "Points": 100}]),
+            "History": EMPTY_HISTORY.copy(),
+            "MonthlyLedger": EMPTY_MONTHLY_LEDGER.copy(),
+        }
+    )
+    service = PointSystemService(store)
+
+    service.update_member_points(stale_members, "Members", "QA User", 7, "QA add")
+    members = store.read_worksheet("Members")
+    history = store.read_worksheet("History")
+    assert_true(int(members.loc[0, "Points"]) == 107, "member points should use the live Members value")
+    assert_true(int(history.loc[0, "PreviousPoints"]) == 100, "history previous points should come from Members")
+    assert_true(int(history.loc[0, "CurrentPoints"]) == 107, "history current points should equal pre plus delta")
+
+    failing_store = InMemoryStore(
+        {
+            "Members": pd.DataFrame([{"Name": "QA User", "Points": 100}]),
+            "History": EMPTY_HISTORY.copy(),
+            "MonthlyLedger": EMPTY_MONTHLY_LEDGER.copy(),
+        },
+        corrupt_next_members_write=True,
+    )
+    failing_service = PointSystemService(failing_store)
+    try:
+        failing_service.update_member_points(stale_members, "Members", "QA User", 7, "QA failed add")
+    except ActionValidationError:
+        pass
+    else:
+        raise AssertionError("validation mismatch should raise ActionValidationError")
+
+    members_after_failure = failing_store.read_worksheet("Members")
+    history_after_failure = failing_store.read_worksheet("History")
+    assert_true(int(members_after_failure.loc[0, "Points"]) == 100, "failed action should restore previous points")
+    assert_true(history_after_failure.empty, "failed action should not append history")
+
+
 def test_source_has_expected_sections():
     source = APP_PATH.read_text(encoding="utf-8")
     flet_source = FLET_APP_PATH.read_text(encoding="utf-8")
@@ -186,7 +254,8 @@ def test_source_has_expected_sections():
         assert_true(token in source, f"missing expected app section: {token}")
 
     migration_tokens = [
-        "from point_system.service import create_service",
+        "create_service",
+        "ActionValidationError",
         "ft.run(main)",
         "render_admin_tabs",
         "render_child_tabs",
@@ -255,10 +324,79 @@ def run_live_write_check():
     print("[QA] Live write smoke test: OK")
 
 
+class LiveQaStore:
+    def __init__(self, spreadsheet):
+        self.spreadsheet = spreadsheet
+        self.mapping = {
+            "Members": QA_MEMBERS_WORKSHEET,
+            "History": QA_HISTORY_WORKSHEET,
+            "MonthlyLedger": QA_MONTHLY_LEDGER_WORKSHEET,
+        }
+
+    def _worksheet_name(self, worksheet: str | int) -> str | int:
+        return self.mapping.get(worksheet, worksheet)
+
+    def _worksheet(self, worksheet: str | int):
+        name = self._worksheet_name(worksheet)
+        if isinstance(name, int):
+            return self.spreadsheet.get_worksheet(name)
+        return self.spreadsheet.worksheet(name)
+
+    def read_worksheet(self, worksheet: str | int) -> pd.DataFrame:
+        return get_as_dataframe(self._worksheet(worksheet), evaluate_formulas=True)
+
+    def write_worksheet(self, worksheet: str | int, data: pd.DataFrame) -> None:
+        target = self._worksheet(worksheet)
+        target.clear()
+        set_with_dataframe(target, data, include_index=False, resize=True)
+
+    def create_worksheet(self, worksheet: str, data: pd.DataFrame) -> None:
+        name = self._worksheet_name(worksheet)
+        self.spreadsheet.add_worksheet(title=name, rows=max(len(data) + 5, 20), cols=max(len(data.columns) + 2, 4))
+        self.write_worksheet(worksheet, data)
+
+
+def upsert_live_qa_worksheet(spreadsheet, title: str, data: pd.DataFrame) -> None:
+    try:
+        worksheet = spreadsheet.worksheet(title)
+    except Exception:
+        worksheet = spreadsheet.add_worksheet(title=title, rows=max(len(data) + 5, 20), cols=max(len(data.columns) + 2, 4))
+    worksheet.clear()
+    set_with_dataframe(worksheet, data, include_index=False, resize=True)
+
+
+def run_live_action_flow_check():
+    if str(SRC_PATH) not in sys.path:
+        sys.path.insert(0, str(SRC_PATH))
+
+    from point_system.constants import EMPTY_HISTORY, EMPTY_MONTHLY_LEDGER
+    from point_system.service import PointSystemService
+
+    spreadsheet, spreadsheet_url = get_gspread_handles()
+    print(f"[QA] Live action QA spreadsheet: {spreadsheet_url}")
+    upsert_live_qa_worksheet(spreadsheet, QA_MEMBERS_WORKSHEET, pd.DataFrame([{"Name": "QA User", "Points": 100}]))
+    upsert_live_qa_worksheet(spreadsheet, QA_HISTORY_WORKSHEET, EMPTY_HISTORY.copy())
+    upsert_live_qa_worksheet(spreadsheet, QA_MONTHLY_LEDGER_WORKSHEET, EMPTY_MONTHLY_LEDGER.copy())
+
+    service = PointSystemService(LiveQaStore(spreadsheet))
+    service.update_member_points(pd.DataFrame([{"Name": "QA User", "Points": 0}]), "Members", "QA User", 25, "QA earned")
+    service.update_member_points(pd.DataFrame([{"Name": "QA User", "Points": 0}]), "Members", "QA User", -10, "QA prize")
+
+    members = service.store.read_worksheet("Members").dropna(how="all")
+    history = service.get_history_data()
+    assert_true(int(members.loc[members["Name"] == "QA User", "Points"].iloc[0]) == 115, "live QA member total should be 115")
+    assert_true(int(history.iloc[0]["PreviousPoints"]) == 125, "live QA prize previous points should be 125")
+    assert_true(int(history.iloc[0]["CurrentPoints"]) == 115, "live QA prize current points should be 115")
+    assert_true(int(history.iloc[1]["PreviousPoints"]) == 100, "live QA earned previous points should be 100")
+    assert_true(int(history.iloc[1]["CurrentPoints"]) == 125, "live QA earned current points should be 125")
+    print("[QA] Live action flow QA: OK")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--live-read", action="store_true", help="Verify live Google Sheets read access")
     parser.add_argument("--live-write", action="store_true", help="Verify live Google Sheets write access using QA_Check worksheet")
+    parser.add_argument("--live-action-qa", action="store_true", help="Run a point update flow against isolated QA_* worksheets")
     args = parser.parse_args()
 
     env = load_symbols()
@@ -267,11 +405,14 @@ def main():
     run_step("Catalog sorting", lambda: test_catalog_sorting(env))
     run_step("History cleanup", lambda: test_history_cleanup(env))
     run_step("Monthly goal logic", lambda: test_monthly_goal_logic(env))
+    run_step("Point update validation flow", test_point_update_flow)
     run_step("Expected app sections", test_source_has_expected_sections)
     if args.live_read:
         run_step("Live Google Sheets read", run_live_read_check)
     if args.live_write:
         run_step("Live Google Sheets write", run_live_write_check)
+    if args.live_action_qa:
+        run_step("Live Google Sheets action QA", run_live_action_flow_check)
     print("[QA] All checks passed.")
 
 

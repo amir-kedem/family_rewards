@@ -28,7 +28,7 @@ from point_system.constants import (
     PRIZES_WORKSHEET,
     get_catalog_config,
 )
-from point_system.service import create_service
+from point_system.service import ActionValidationError, create_service
 from point_system.sheets import SheetAccessError
 
 if os.getenv("PORT"):
@@ -37,6 +37,7 @@ os.environ.setdefault("FLET_FORCE_WEB_SERVER", "true")
 
 DATA_CACHE_TTL_SECONDS = 20
 APP_BUILD = "family-rewards-flet-ux-history-2026-04-21"
+FAILED_ACTION_MESSAGE = "\u05e4\u05e2\u05d5\u05dc\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4"
 
 print(f"Starting {APP_BUILD}")
 
@@ -214,6 +215,12 @@ def main(page: ft.Page):
                 state["busy"] = False
                 rerender(force_refresh=True)
                 show_success_dialog("פעולה בוצעה")
+            except ActionValidationError:
+                state["last_action"] = None
+                state["message"] = FAILED_ACTION_MESSAGE
+                state["busy"] = False
+                rerender(force_refresh=True)
+                show_success_dialog(FAILED_ACTION_MESSAGE)
             except SheetAccessError as exc:
                 state["busy"] = False
                 render_sheet_error(page, exc, config.service_account_email, config.spreadsheet)
@@ -530,17 +537,24 @@ def main(page: ft.Page):
     def render_success_notice() -> ft.Control:
         if not state["success_dialog"]:
             return ft.Container()
+        is_failure = state["success_dialog"] == FAILED_ACTION_MESSAGE
         return ft.Container(
             content=ft.Row(
                 [
-                    ft.Text(str(state["success_dialog"]), size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.Text(
+                        str(state["success_dialog"]),
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                        color=ft.Colors.RED_900 if is_failure else None,
+                        expand=True,
+                    ),
                     ft.ElevatedButton("OK", on_click=close_success_dialog),
                 ],
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=14,
-            bgcolor=ft.Colors.GREEN_100,
+            bgcolor=ft.Colors.RED_100 if is_failure else ft.Colors.GREEN_100,
             border_radius=8,
         )
 

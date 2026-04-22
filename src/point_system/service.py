@@ -168,11 +168,19 @@ class PointSystemService:
         delta: int,
         action_label: str,
     ) -> tuple[str, int, str]:
-        idx = members_df[members_df["Name"] == member_name].index[0]
-        previous_points = int(members_df.at[idx, "Points"])
-        members_df.at[idx, "Points"] += delta
-        current_points = int(members_df.at[idx, "Points"])
-        self.store.write_worksheet(members_target, members_df)
+        live_members = clean_members_df(self.store.read_worksheet(members_target))
+        idx = self._member_index(live_members, member_name)
+        previous_points = int(live_members.at[idx, "Points"])
+        current_points = previous_points + int(delta)
+
+        live_members.at[idx, "Points"] = current_points
+        self.store.write_worksheet(members_target, live_members)
+
+        actual_points = self._read_member_points(members_target, member_name)
+        if actual_points != current_points:
+            self._restore_member_points(members_target, member_name, previous_points)
+            raise ActionValidationError(member_name, current_points, actual_points)
+
         self.append_history_entry(member_name, action_label, delta, previous_points, current_points)
         self.append_monthly_ledger_entry(member_name, action_label, delta)
         return member_name, delta, action_label
@@ -182,6 +190,33 @@ class PointSystemService:
 
     def clear_history(self) -> None:
         self.store.write_worksheet(HISTORY_WORKSHEET, EMPTY_HISTORY.copy())
+
+    def _member_index(self, members_df: pd.DataFrame, member_name: str) -> int:
+        matches = members_df[members_df["Name"] == member_name].index
+        if matches.empty:
+            raise ValueError(f"Member not found in Members worksheet: {member_name}")
+        return int(matches[0])
+
+    def _read_member_points(self, members_target: str | int, member_name: str) -> int:
+        members_df = clean_members_df(self.store.read_worksheet(members_target))
+        idx = self._member_index(members_df, member_name)
+        return int(members_df.at[idx, "Points"])
+
+    def _restore_member_points(self, members_target: str | int, member_name: str, points: int) -> None:
+        members_df = clean_members_df(self.store.read_worksheet(members_target))
+        idx = self._member_index(members_df, member_name)
+        members_df.at[idx, "Points"] = int(points)
+        self.store.write_worksheet(members_target, members_df)
+
+
+class ActionValidationError(RuntimeError):
+    def __init__(self, member_name: str, expected_points: int, actual_points: int):
+        self.member_name = member_name
+        self.expected_points = expected_points
+        self.actual_points = actual_points
+        super().__init__(
+            f"Point validation failed for {member_name}: expected {expected_points}, got {actual_points}"
+        )
 
 
 def create_service(root: Path | None = None) -> PointSystemService:
