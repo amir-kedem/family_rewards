@@ -58,6 +58,7 @@ def main(page: ft.Page):
         "active_user": None,
         "last_action": None,
         "selected_users": {},
+        "selected_tasks": {},
         "selected_tabs": {},
         "message": None,
         "busy": False,
@@ -132,6 +133,8 @@ def main(page: ft.Page):
         )
         page.update()
 
+    page.on_resize = lambda _: rerender()
+
     def set_selected_user(kind: str, user_name: str) -> None:
         state["selected_users"][kind] = user_name
         rerender()
@@ -145,6 +148,23 @@ def main(page: ft.Page):
         state["selected_users"][kind] = fallback
         return fallback
 
+    def set_selected_task(kind: str, task_title: str) -> None:
+        state["selected_tasks"][kind] = task_title
+        rerender()
+
+    def selected_task(kind: str, tasks_df: pd.DataFrame) -> str:
+        task_titles = tasks_df["Title"].astype(str).tolist()
+        stored = state["selected_tasks"].get(kind)
+        if stored in task_titles:
+            return stored
+        fallback = task_titles[0]
+        state["selected_tasks"][kind] = fallback
+        return fallback
+
+    def is_narrow_layout() -> bool:
+        page_width = page.width or 960
+        return page_width < 760
+
     def render_tab_switcher(tab_key: str, tabs: list[tuple[str, callable]]) -> ft.Control:
         selected = int(state["selected_tabs"].get(tab_key, 0))
         selected = min(max(selected, 0), len(tabs) - 1)
@@ -154,15 +174,31 @@ def main(page: ft.Page):
             state["selected_tabs"][tab_key] = index
             rerender()
 
-        buttons: list[ft.Control] = []
-        for index, (label, _) in enumerate(tabs):
-            button_cls = ft.ElevatedButton if index == selected else ft.OutlinedButton
-            buttons.append(button_cls(label, on_click=lambda _, idx=index: set_tab(idx)))
+        if is_narrow_layout():
+            tab_selector = ft.Dropdown(
+                label="בחירת מסך",
+                value=str(selected),
+                options=[
+                    ft.DropdownOption(key=str(index), text=label)
+                    for index, (label, _) in enumerate(tabs)
+                ],
+                dense=True,
+                filled=True,
+                expand=True,
+                on_select=lambda event: set_tab(int(event.control.value or 0)),
+            )
+            tabs_control: ft.Control = tab_selector
+        else:
+            buttons: list[ft.Control] = []
+            for index, (label, _) in enumerate(tabs):
+                button_cls = ft.ElevatedButton if index == selected else ft.OutlinedButton
+                buttons.append(button_cls(label, on_click=lambda _, idx=index: set_tab(idx)))
+            tabs_control = ft.Row(buttons, wrap=True, spacing=8, run_spacing=8)
 
         selected_content = tabs[selected][1]()
         return ft.Column(
             [
-                ft.Row(buttons, wrap=True, spacing=8, run_spacing=8),
+                tabs_control,
                 ft.Container(content=selected_content, padding=ft.padding.only(top=12)),
             ],
             spacing=8,
@@ -189,6 +225,7 @@ def main(page: ft.Page):
         state["active_user"] = None
         state["last_action"] = None
         state["selected_users"] = {}
+        state["selected_tasks"] = {}
         rerender()
 
     def update_points(user_name: str, points: int, action_label: str, remember: bool = True) -> None:
@@ -479,19 +516,16 @@ def main(page: ft.Page):
             controls.append(ft.Text(str(state["message"]), size=14, color=ft.Colors.BLUE_700))
         if state["busy"]:
             controls.append(ft.ProgressBar(width=260))
-        return ft.Row(
+        actions: list[ft.Control] = [
+            ft.IconButton(ft.Icons.REFRESH, tooltip="רענן נתונים", on_click=lambda _: rerender(force_refresh=True)),
+            ft.OutlinedButton("יציאה", visible=bool(state["role"]), on_click=logout),
+        ]
+        return ft.Column(
             controls=[
-                ft.Column(controls, spacing=2, expand=True),
-                ft.OutlinedButton(
-                    "בטל פעולה אחרונה",
-                    visible=bool(state["role"] and state["last_action"]),
-                    disabled=bool(state["busy"]),
-                    on_click=undo_last,
-                ),
-                ft.IconButton(ft.Icons.REFRESH, tooltip="רענן נתונים", on_click=lambda _: rerender(force_refresh=True)),
-                ft.OutlinedButton("יציאה", visible=bool(state["role"]), on_click=logout),
+                ft.Column(controls, spacing=2),
+                ft.Row(actions, wrap=True, spacing=8, run_spacing=8),
             ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            spacing=10,
         )
 
     def render_goal() -> ft.Control:
@@ -581,7 +615,18 @@ def main(page: ft.Page):
         )
 
     def render_user_picker(kind: str) -> ft.Control:
+        members = data["members_df"]["Name"].tolist()
         current = selected_user(kind)
+        if is_narrow_layout():
+            return ft.Dropdown(
+                label="בחר משתמש",
+                value=current,
+                options=[ft.DropdownOption(key=user, text=user) for user in members],
+                dense=True,
+                filled=True,
+                expand=True,
+                on_select=lambda event: set_selected_user(kind, event.control.value or current),
+            )
         return ft.Row(
             [
                 ft.OutlinedButton(
@@ -591,9 +636,11 @@ def main(page: ft.Page):
                         bgcolor=ft.Colors.BLUE_50 if user == current else None,
                     ),
                 )
-                for user in data["members_df"]["Name"].tolist()
+                for user in members
             ],
             wrap=True,
+            spacing=8,
+            run_spacing=8,
         )
 
     def render_task_panel(kind: str, tasks_df: pd.DataFrame, is_admin: bool) -> ft.Control:
@@ -604,6 +651,34 @@ def main(page: ft.Page):
         if is_admin:
             user_name = selected_user(kind)
             picker = render_user_picker(kind)
+            current_task = selected_task(kind, tasks_df)
+            selected_rows = tasks_df[tasks_df["Title"].astype(str) == current_task]
+            if selected_rows.empty:
+                selected_rows = tasks_df.head(1)
+            selected_row = selected_rows.iloc[0]
+            selected_points = int(selected_row[config_for_kind["value_column"]])
+            action_label = f"{config_for_kind['action_prefix']} {selected_row['Title']}"
+            task_selector = ft.Dropdown(
+                label=config_for_kind["tab_label"],
+                value=current_task,
+                options=[
+                    ft.DropdownOption(
+                        key=str(row["Title"]),
+                        text=f"{row['Title']} ({money_or_points(int(row[config_for_kind['value_column']]))})",
+                    )
+                    for _, row in tasks_df.iterrows()
+                ],
+                dense=True,
+                filled=True,
+                expand=True,
+                on_select=lambda event: set_selected_task(kind, event.control.value or current_task),
+            )
+            submit_button = ft.ElevatedButton(
+                "אישור דיווח",
+                disabled=bool(state["busy"]),
+                on_click=lambda _, user=user_name, pts=selected_points, action=action_label: update_points(user, pts, action),
+            )
+            return ft.Column([picker, task_selector, submit_button], spacing=14)
         else:
             user_name = state["active_user"]
             picker = ft.Text(f"הדיווח יירשם עבור {user_name}", color=ft.Colors.GREY_700)
@@ -628,6 +703,38 @@ def main(page: ft.Page):
             )
 
         return ft.Column([picker, ft.Row(buttons, wrap=True, spacing=10, run_spacing=10)], spacing=14)
+
+    def render_undo_notice() -> ft.Control:
+        if not state["last_action"]:
+            return ft.Container()
+
+        last_user, last_points, last_label = state["last_action"]
+        summary = ft.Text(
+            f"פעולה אחרונה: {last_label} ל-{last_user} ({last_points} נק')",
+            expand=not is_narrow_layout(),
+        )
+        button = ft.OutlinedButton(
+            "בטל פעולה אחרונה",
+            disabled=bool(state["busy"]),
+            on_click=undo_last,
+        )
+        content: ft.Control
+        if is_narrow_layout():
+            content = ft.Column([summary, button], spacing=10)
+        else:
+            content = ft.Row(
+                [summary, button],
+                spacing=10,
+                wrap=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        return ft.Container(
+            content=content,
+            padding=12,
+            bgcolor=ft.Colors.AMBER_50,
+            border=ft.border.all(1, ft.Colors.AMBER_200),
+            border_radius=10,
+        )
 
     def render_prizes_panel() -> ft.Control:
         prizes_df = data["prizes_df"]
@@ -793,20 +900,9 @@ def main(page: ft.Page):
         )
 
     def render_admin_tabs() -> ft.Control:
-        if state["last_action"]:
-            last_user, last_points, last_label = state["last_action"]
-            undo = ft.Row(
-                [
-                    ft.Text(f"פעולה אחרונה: {last_label} ל-{last_user} ({last_points} נק')", expand=True),
-                ],
-                wrap=True,
-            )
-        else:
-            undo = ft.Container()
-
         return ft.Column(
             [
-                undo,
+                render_undo_notice(),
                 render_tab_switcher(
                     "admin",
                     [
