@@ -8,7 +8,7 @@ ADMIN_LABEL = "הורה"
 CHILD_USERS = ["גוני", "נווה"]
 DEFAULT_MEMBERS = ["גוני", "נווה", "מורית", "אמיר"]
 LOGIN_OPTIONS = [*CHILD_USERS, ADMIN_LABEL]
-FAMILY_GOAL = 10000
+FAMILY_GOAL = 5000
 HISTORY_RETENTION_DAYS = 8
 LOCAL_TIMEZONE = ZoneInfo("Asia/Jerusalem")
 
