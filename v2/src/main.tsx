@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { monthlyGoalPoints } from "./monthly-goal";
 import { byPoints, filterActivity } from "./activity-view";
-import {OnboardingGate} from './onboarding';
+import {OnboardingGate,requestKey} from './onboarding';
+import {ParentRecovery,RecoveryReset} from './password-recovery';
 type Member = {
   id: string;
   name: string;
@@ -54,6 +55,7 @@ class ApiError extends Error {
   }
 }
 const errors: Record<string, string> = {
+  invalid_recovery_code: "קוד השחזור שגוי, נוצל או שפג תוקפו",
   login_required: "יש להיכנס מחדש למשפחה",
   incorrect_password: "סיסמה שגויה",
   parent_required: "פעולה זו זמינה להורה בלבד",
@@ -177,6 +179,8 @@ function Modal({
 function App() {
   const [data, setData] = useState<Data | null>(null),
     [login, setLogin] = useState(false),
+    [recovering,setRecovering] = useState(false),
+    [parentLogin,setParentLogin] = useState(false),
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("home"),
     [historyExpanded, setHistoryExpanded] = useState(false),
@@ -255,7 +259,7 @@ function App() {
       kind,
       title,
       memberId: person,
-      key: crypto.randomUUID(),
+      key: requestKey(),
       ...extra,
     });
   };
@@ -488,6 +492,7 @@ function App() {
       </section>
     );
   }
+  if (recovering) return <RecoveryReset request={api} done={()=>{setRecovering(false);setData(null);setLogin(true);setLoading(false);}} />;
   if (loading)
     return (
       <div className="login card" role="status">
@@ -501,7 +506,7 @@ function App() {
           <span className="brandIcon">🌱</span>הבית שלנו
         </div>
         <h1>ברוכים הבאים</h1>
-        <p className="smallMuted">הזינו את סיסמת המשפחה כדי להיכנס.</p>
+        <p className="smallMuted">{parentLogin?"כניסה ישירה להורה עם סיסמת ההורה הפרטית.":"הזינו את סיסמת המשפחה כדי להיכנס."}</p>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
@@ -511,7 +516,7 @@ function App() {
             setBusy(true);
             setError("");
             try {
-              await api("/login", { password });
+              await api(parentLogin?"/parent/login":"/login", { password });
               await load();
             } catch (e) {
               setError((e as Error).message);
@@ -521,8 +526,9 @@ function App() {
           }}
         >
           <label>
-            סיסמת משפחה
+            {parentLogin?"סיסמת הורה":"סיסמת משפחה"}
             <input
+              key={parentLogin?"parent":"family"}
               name="password"
               type="password"
               autoComplete="current-password"
@@ -536,9 +542,11 @@ function App() {
             </p>
           )}
           <button className="button primary" disabled={busy}>
-            {busy ? "נכנסים…" : "כניסה למשפחה"}
+            {busy ? "נכנסים…" : parentLogin?"כניסת הורה":"כניסה למשפחה"}
           </button>
         </form>
+        <button type="button" className="button recoveryLink" onClick={()=>{setParentLogin(!parentLogin);setError('');}}>{parentLogin?"חזרה לכניסת המשפחה":"כניסת הורה"}</button>
+        <button type="button" className="button recoveryLink" onClick={()=>setRecovering(true)}>שכחתם את הסיסמה?</button>
       </main>
     );
   if (!data)
@@ -723,6 +731,7 @@ function App() {
         )}
         {tab === "tasks" && (
           <>
+            <ParentRecovery request={api} />
             <div className="filters">
               {[
                 ["all", "הכול"],
@@ -977,6 +986,7 @@ function App() {
         >
           <div className="formFields">
             {dialog.kind === "parent" && (
+              <>
               <label>
                 סיסמת הורה
                 <input
@@ -988,6 +998,8 @@ function App() {
                   autoFocus
                 />
               </label>
+              <button type="button" className="button" onClick={()=>{setDialog(null);setRecovering(true);}}>שכחתי סיסמת הורה</button>
+              </>
             )}
             {["task", "reward"].includes(dialog.kind) && (
               <>
