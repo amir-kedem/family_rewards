@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react';
+import {SetupAccessCard} from './setup-access-card';
 type Draft={familyName:string;children:{name:string;emoji:string;points:number}[];catalog:{kind:'task'|'reward';category:string;title:string;emoji:string;value:number}[];familyGoal:number;step:number};
 type Status={required:boolean;stage?:string;authorized?:boolean;draft?:Draft;version?:number};
 type Request=(path:string,input?:unknown)=>Promise<any>;
@@ -24,7 +25,7 @@ export function OnboardingGate({request,children}:{request:Request;children:Reac
 }
 function Setup({status,request,done}:{status:Status;request:Request;done:()=>void}) {
   const [access,setAccess]=useState(status),[draft,setDraft]=useState<Draft>(status.draft||initial),[version,setVersion]=useState(status.version||0),
-    [step,setStep]=useState(status.draft?.step||1),[busy,setBusy]=useState(false),[error,setError]=useState(''),
+    [recovery,setRecovery]=useState<{code:string;expiresAt:number}|null>(null),[step,setStep]=useState(status.draft?.step||1),[busy,setBusy]=useState(false),[error,setError]=useState(''),
     [parentPassword,setParentPassword]=useState(''),[parentConfirm,setParentConfirm]=useState(''),
     [familyPassword,setFamilyPassword]=useState(''),[familyConfirm,setFamilyConfirm]=useState(''),
     [requestId]=useState(requestKey),[token]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('setup')||'');
@@ -47,8 +48,9 @@ function Setup({status,request,done}:{status:Status;request:Request;done:()=>voi
   async function finish(e:React.FormEvent){
     e.preventDefault();if(busy)return;setError('');
     if(familyPassword!==familyConfirm){setError('הסיסמאות אינן זהות');return;}
-    setBusy(true);try{await request('/setup/complete',{version,familyPassword,requestId});done();}catch(e){failure(e);}finally{setFamilyPassword('');setFamilyConfirm('');setBusy(false);}
+    setBusy(true);try{const result=await request('/setup/complete',{version,familyPassword,requestId});if(result.recoveryCode)setRecovery({code:result.recoveryCode,expiresAt:result.recoveryExpiresAt});else done();}catch(e){failure(e);}finally{setFamilyPassword('');setFamilyConfirm('');setBusy(false);}
   }
+  if(recovery)return <SetupAccessCard familyName={draft.familyName} code={recovery.code} expiresAt={recovery.expiresAt} done={done} />;
   const title=['','הילדים שלנו','פעילויות ופרסים','היעד המשפחתי','סקירה והתחלה'][step];
   const updateChild=(index:number,patch:Partial<Draft['children'][number]>)=>setDraft({...draft,children:draft.children.map((c,i)=>i===index?{...c,...patch}:c)});
   const updateItem=(index:number,patch:Partial<Draft['catalog'][number]>)=>setDraft({...draft,catalog:draft.catalog.map((c,i)=>i===index?{...c,...patch}:c)});
@@ -86,7 +88,7 @@ function Setup({status,request,done}:{status:Status;request:Request;done:()=>voi
     </section>}
     {step===3&&<section className="formFields"><label>שם הבית<input value={draft.familyName} maxLength={60} onChange={e=>setDraft({...draft,familyName:e.target.value})} disabled={busy}/></label><label>היעד החודשי בנקודות<input type="number" min={1} max={1000000000} step={1} value={draft.familyGoal} onChange={e=>setDraft({...draft,familyGoal:Number(e.target.value)})} disabled={busy}/></label><p>ההתקדמות מחושבת לפי החודש בישראל. נקודות שמרוויחים במהלך החודש מקדמות את היעד; מימוש פרס לא מוריד ממנו.</p></section>}
     {step===4&&<section className="formFields"><h2>{draft.familyName}</h2><p>הסדר והיתרות שבחרתם:</p><ul>{draft.children.map((child,i)=><li key={i}>{child.emoji} {child.name}: {child.points} נק׳{i===0?' · ברירת מחדל':''}</li>)}</ul><p>{draft.catalog.filter(i=>i.kind==='task').length} פעילויות · {draft.catalog.filter(i=>i.kind==='reward').length} פרסים · יעד חודשי {draft.familyGoal} נק׳</p><p>סיסמת ההורה כבר נשמרה. עכשיו בחרו קוד משפחה נפרד שתוכלו לשתף עם הילדים.</p>
-      <form onSubmit={e=>void finish(e)}><label>סיסמת המשפחה<input type="password" minLength={4} maxLength={256} autoComplete="new-password" required value={familyPassword} onChange={e=>setFamilyPassword(e.target.value)} disabled={busy}/></label><label>אימות סיסמת המשפחה<input type="password" minLength={4} maxLength={256} autoComplete="new-password" required value={familyConfirm} onChange={e=>setFamilyConfirm(e.target.value)} disabled={busy}/></label><p>לפחות 4 תווים. לאחר ההתחלה אפשר לשתף את כתובת הבית ואת קוד המשפחה עם הילדים. את סיסמת ההורה שומרים אצלכם.</p><button className="button primary" disabled={busy}>{busy?'מכינים את הבית…':'הכול מוכן, מתחילים!'}</button></form>
+      <form onSubmit={e=>void finish(e)}><label>סיסמת המשפחה<input type="password" minLength={4} maxLength={256} autoComplete="new-password" required value={familyPassword} onChange={e=>setFamilyPassword(e.target.value)} disabled={busy}/></label><label>אימות סיסמת המשפחה<input type="password" minLength={4} maxLength={256} autoComplete="new-password" required value={familyConfirm} onChange={e=>setFamilyConfirm(e.target.value)} disabled={busy}/></label><p>לפחות 4 תווים. לאחר ההתחלה אפשר לשתף את כתובת הבית ואת קוד המשפחה עם הילדים. את סיסמת ההורה שומרים אצלכם.</p><button className="button primary" disabled={busy}>{busy?'מכינים את הבית…':'שמירת הבית והמשך לפרטי הגישה'}</button></form>
     </section>}
     {error&&<p className="error" role="alert">{error}</p>}
     <div className="setupNavigation">{step>1&&<button className="button" disabled={busy} onClick={()=>void save(step-1)}>חזרה</button>}{step<4&&<button className="button primary" disabled={busy} onClick={()=>void save(step+1)}>{busy?'שומרים…':'שמירה והמשך'}</button>}</div>
