@@ -2,7 +2,7 @@
 
 The code includes a four-step first-run wizard for newly provisioned instances: children/order/opening balances, optional activities/prizes, family name/monthly goal, and final review/family password. A private invitation first establishes the parent password and setup ownership. The current family's installation bypasses this flow and does not need a migration for this release.
 
-These tools **prepare files locally**. They do not create Cloudflare resources, upload data, change billing or deploy automatically. Controlled release-to-all remains separate implementation work.
+These tools **prepare files locally**. They do not create Cloudflare resources, upload data, change billing or deploy automatically. The manual managed release workflow is implemented separately; it remains inactive until protected credentials and cutover are configured. See [RELEASES.md](RELEASES.md).
 
 ## Requirements
 
@@ -67,9 +67,11 @@ node scripts/prepare-instance.mjs --registry .private/instances.json --instance 
 
 This creates a new private output directory. Execute its `invitation.sql` with the registered instance's config, verify the operation succeeded, and privately send the new setup link. Renewal replaces the old token and only works for an empty, matching, still-pending instance. It cannot reclaim a claimed/completed family or reset its passwords.
 
-After claim, the normal recovery path is resuming with the parent password. Lost parent passwords need a separate verified-owner maintenance procedure; there is no public password-reset bypass or automatic data deletion.
+After claim, the normal recovery path is resuming with the parent password. After completion, parents can generate a saved, single-use recovery code in parent management after confirming their current parent password. That code can reset a forgotten parent password. Direct parent sign-in also lets a parent replace a forgotten family password. There is no email recovery service or public password-reset bypass. A parent who loses both their parent password and saved recovery code still needs verified-owner maintenance; that operator procedure is not automated. See [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md).
 
-## Verification before inviting another family
+## Pilot check and verification before inviting another family
+
+The maintainer completed the isolated `family-rewards-pilot` onboarding and reported successful point actions, parent controls and access from another device on 2026-11-04. These are user-reported functional checks, not a load test. The pilot schema was initialized through the D1 Console; reconcile migration tracking before automated schema upgrades.
 
 Provision an isolated test instance and complete setup on desktop and mobile. Verify identity mismatch rejection, session expiry/resume, child order, starting balances, monthly goal, tasks, parent controls and family login. The local API suite covers invalid/expired/replayed invitations, cross-origin requests, byte limits, rate limits, private drafts, stale writes, concurrent completion and full rollback on failure. Local tests and sample-screen previews do not replace this second-instance Cloudflare check.
 
