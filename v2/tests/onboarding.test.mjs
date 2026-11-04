@@ -86,6 +86,14 @@ test('completion is atomic and replay-safe; balances/order survive and passwords
   const complete=()=>f.call('/setup/complete',{version:1,familyPassword,requestId},{headers:{Cookie:setupCookie}});
   const responses=await Promise.all([complete(),complete()]);
   assert(responses.every(r=>r.status===200));
+  assert(responses.every(r=>/^[a-f0-9]{8}(-[a-f0-9]{8}){7}$/.test(r.data.recoveryCode)));
+  assert.equal(responses[0].data.recoveryCode,responses[1].data.recoveryCode);
+  const raw=responses[0].data.recoveryCode.replaceAll('-','');
+  const verifier=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+  const encoded=Array.from(new Uint8Array(verifier),x=>x.toString(16).padStart(2,'0')).join('');
+  assert.equal(f.sql.prepare('SELECT code_hash FROM parent_recovery').get().code_hash,encoded);
+  assert(!JSON.stringify(f.sql.prepare('SELECT * FROM parent_recovery').all()).includes(raw));
+
   assert.deepEqual(f.sql.prepare('SELECT name,points FROM members ORDER BY rowid').all().map(r=>[r.name,r.points]),[['First child',190],['Second child',140]]);
   assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM catalog').get().n,2);
   assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM history').get().n,0);
