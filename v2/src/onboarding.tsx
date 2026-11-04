@@ -3,7 +3,7 @@ type Draft={familyName:string;children:{name:string;emoji:string;points:number}[
 type Status={required:boolean;stage?:string;authorized?:boolean;draft?:Draft;version?:number};
 type Request=(path:string,input?:unknown)=>Promise<any>;
 const initial:Draft={familyName:'הבית שלנו',children:[],catalog:[],familyGoal:5000,step:1};
-function requestKey() {
+export function requestKey() {
   const bytes=crypto.getRandomValues(new Uint8Array(16));
   bytes[6]=(bytes[6]&15)|64; bytes[8]=(bytes[8]&63)|128;
   const hex=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
