@@ -15,7 +15,7 @@ React/TypeScript interface and Cloudflare Worker/D1 backend for the current Hebr
 
 ## First-run status
 
-One Worker and D1 database serve one family. New-family provisioning and initialization are manual today; child creation, starter catalogs and an onboarding wizard are not implemented yet. Existing initialized families should not be shown a first-run wizard when it is added. Parents need not appear as point-earning participants.
+One Worker and D1 database serve one family. Newly provisioned instances have an invitation-gated parent wizard for adding/reordering children, opening balances, optional activities/prizes, the monthly goal and review. Existing family installations bypass it. Parents need not appear as point-earning participants. See [PROVISIONING.md](PROVISIONING.md) for the local preparation tool and Cloudflare pilot requirements. Provisioning does not yet create Cloudflare resources automatically; guided workbook import and release-to-all remain future work.
 
 ## Validation
 
