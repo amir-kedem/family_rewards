@@ -2,7 +2,7 @@
 import { randomBytes, pbkdf2Sync } from "node:crypto";
 import { stdin, stdout } from "node:process";
 if (!stdin.isTTY) throw new Error("Run interactively in a terminal.");
-stdout.write("New password (at least 12 characters): ");
+stdout.write("New password (at least 4 characters): ");
 stdin.setRawMode(true);
 stdin.resume();
 let password = "";
@@ -17,8 +17,8 @@ stdin.on("data", (chunk) => {
       stdin.setRawMode(false);
       stdin.pause();
       stdout.write("\n");
-      if (password.length < 12) {
-        console.error("Use at least 12 characters.");
+      if (password.length < 4) {
+        console.error("Use at least 4 characters.");
         process.exit(1);
       }
       const salt = randomBytes(24).toString("hex"),
