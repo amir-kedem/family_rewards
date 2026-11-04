@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { monthlyGoalPoints } from "./monthly-goal";
 import { byPoints, filterActivity } from "./activity-view";
+import {OnboardingGate} from './onboarding';
 type Member = {
   id: string;
   name: string;
@@ -34,6 +35,7 @@ type Data = {
   history: Entry[];
   goals: { member_id: string; reward_id: string }[];
   familyGoal: number;
+  familyName?: string;
 };
 type Dialog = {
   kind: string;
@@ -69,6 +71,17 @@ const errors: Record<string, string> = {
   item_not_found: "הפריט כבר אינו זמין",
   action_not_found: "הפעולה כבר אינה ביומן",
   invalid_cancellation: "לא ניתן לבטל פעולה זו",
+  setup_required: "יש להשלים תחילה את הגדרת הבית",
+  setup_login_required: "זמן ההגדרה הסתיים. היכנסו שוב עם סיסמת ההורה",
+  setup_invitation_invalid: "קישור ההזמנה אינו תקף או שפג תוקפו. בקשו קישור חדש ממנהל האפליקציה",
+  setup_unavailable: "ההזמנה כבר נוצלה או שההגדרה הסתיימה. רעננו להמשך",
+  setup_changed_refresh: "הטיוטה השתנתה במכשיר אחר. רעננו כדי לטעון את הגרסה השמורה",
+  setup_existing_data: "כבר קיימים נתונים בבית הזה. ההגדרה נעצרה כדי לשמור עליהם",
+  invalid_setup_data: "בדקו שמות, סמלים וערכי נקודות. יש להשתמש במספרים שלמים בטווח המותר",
+  duplicate_child_name: "יש לבחור שם שונה לכל ילד או ילדה",
+  invalid_setup_password: "בחרו סיסמה באורך 4 עד 256 תווים, ללא רווחים בתחילתה או בסופה",
+  passwords_must_differ: "סיסמת המשפחה צריכה להיות שונה מסיסמת ההורה",
+  instance_binding_mismatch: "הבית אינו מחובר להגדרות הנכונות. פנו למנהל האפליקציה",
 };
 async function api(
   path: string,
@@ -549,7 +562,7 @@ function App() {
         <div className="brand">
           <span className="brandIcon">🌱</span>
           <div>
-            הבית שלנו<small>FAMILY REWARDS</small>
+            {data.familyName || 'הבית שלנו'}<small>FAMILY REWARDS</small>
           </div>
         </div>
         {visibleTabs.map(([id, icon, label]) => (
@@ -1122,4 +1135,4 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<OnboardingGate request={api}><App /></OnboardingGate>);
