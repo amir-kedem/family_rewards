@@ -5,6 +5,18 @@ export type SetupEnv={DB:{prepare(sql:string):Statement;batch(statements:Stateme
 type Child={name:string;emoji:string;points:number};
 type Catalog={kind:'task'|'reward';category:string;title:string;emoji:string;value:number};
 export type SetupDraft={familyName:string;children:Child[];catalog:Catalog[];familyGoal:number;step:number};
+async function completionRecovery(env:SetupEnv,token:string,requestId:string,replayed=false) {
+  // A deterministic code permits an authenticated completion retry without
+  // storing the raw code. The setup cookie is a random 256-bit secret.
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(token),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const raw=Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('family-rewards-setup-recovery-v1:'+requestId))),x=>x.toString(16).padStart(2,'0')).join('');
+  return {raw,code:raw.match(/.{8}/g)!.join('-')};
+}
+async function completionResponse(env:SetupEnv,token:string,requestId:string,replayed=false) {
+  const code=await completionRecovery(env,token,requestId);
+  const saved=await env.DB.prepare('SELECT code_hash,expires_at FROM parent_recovery WHERE id=1').first();
+  return json({complete:true,...(replayed?{replayed:true}:{}),...(saved?.code_hash===await digest(code.raw)?{recoveryCode:code.code,recoveryExpiresAt:saved.expires_at}:{})});
+}
 const SESSION_MS=30*60*1000;
 const randomToken=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
 const setupCookie=(token:string)=>`__Host-fr_setup=${token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=1800`;
@@ -128,7 +140,7 @@ export async function onboarding(request:Request,env:SetupEnv):Promise<Response>
     const input=await body(request);
     if(typeof input.requestId!=='string' || !/^[a-f0-9-]{36}$/.test(input.requestId)) fail(400,'invalid_setup_data');
     if(row.state==='complete') {
-      if(row.completion_key===input.requestId) return json({complete:true,replayed:true});
+      if(row.completion_key===input.requestId) return completionResponse(env,token,input.requestId,true);
       fail(409,'setup_unavailable');
     }
     await assertEmpty(env);
@@ -136,7 +148,7 @@ export async function onboarding(request:Request,env:SetupEnv):Promise<Response>
     if(version!==row.draft_version) fail(409,'setup_changed_refresh');
     const familyPassword=password(input.familyPassword);
     if(await verifyPassword(familyPassword,row.parent_password_hash)) fail(400,'passwords_must_differ');
-    const encoded=await hashPassword(familyPassword),parentToken=randomToken();
+    const encoded=await hashPassword(familyPassword),parentToken=randomToken(),recovery=await completionRecovery(env,token,input.requestId),recoveryExpiresAt=Date.now()+365*86400000;
     const statements=[env.DB.prepare("INSERT INTO setup_completion_guard SELECT 1,CASE WHEN (SELECT COUNT(*) FROM members)+(SELECT COUNT(*) FROM catalog)+(SELECT COUNT(*) FROM history)=0 AND EXISTS(SELECT 1 FROM onboarding WHERE id=1 AND state='claimed' AND draft_version=? AND setup_session_hash=? AND setup_expires_at>?) THEN 1 ELSE 0 END").bind(version,await digest(token),Date.now())];
     statements.push(env.DB.prepare('INSERT INTO members(id,name,emoji,points,is_child) VALUES '+draft.children.map(()=>'(?,?,?,?,1)').join(',')).bind(...draft.children.flatMap(child=>['m-'+crypto.randomUUID(),child.name,child.emoji,child.points])));
     // Keep each statement below D1's bound-parameter limit and the number of
@@ -145,6 +157,7 @@ export async function onboarding(request:Request,env:SetupEnv):Promise<Response>
       const items=draft.catalog.slice(i,i+16);
       statements.push(env.DB.prepare('INSERT INTO catalog(id,kind,category,title,value,emoji) VALUES '+items.map(()=>'(?,?,?,?,?,?)').join(',')).bind(...items.flatMap(item=>[crypto.randomUUID(),item.kind,item.category,item.title,item.value,item.emoji])));
     }
+    statements.push(env.DB.prepare("CREATE TABLE IF NOT EXISTS parent_recovery (id INTEGER PRIMARY KEY CHECK(id=1),code_hash TEXT NOT NULL,expires_at INTEGER NOT NULL)"),env.DB.prepare('INSERT INTO parent_recovery VALUES (1,?,?)').bind(await digest(recovery.raw),recoveryExpiresAt));
     statements.push(env.DB.prepare('UPDATE settings SET family_goal=? WHERE id=1').bind(draft.familyGoal),
       env.DB.prepare('UPDATE instance_identity SET family_name=? WHERE id=1').bind(draft.familyName),
       env.DB.prepare("INSERT INTO password_credentials VALUES ('family',?),('parent',?)").bind(encoded,row.parent_password_hash),
@@ -153,11 +166,11 @@ export async function onboarding(request:Request,env:SetupEnv):Promise<Response>
     try { await env.DB.batch(statements); }
     catch(error) {
       const latest=await setupRow(env);
-      if(latest?.state==='complete' && latest.completion_key===input.requestId) return json({complete:true,replayed:true});
+      if(latest?.state==='complete' && latest.completion_key===input.requestId) return completionResponse(env,token,input.requestId,true);
       if(/constraint/i.test(String(error))) fail(409,'setup_changed_refresh');
       throw error;
     }
-    const response=json({complete:true});
+    const response=await completionResponse(env,token,input.requestId);
     response.headers.append('Set-Cookie',`__Host-fr_session=${parentToken}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=1800`);
     response.headers.append('Set-Cookie','__Host-fr_setup=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0');
     return response;
