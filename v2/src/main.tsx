@@ -731,7 +731,6 @@ function App() {
         )}
         {tab === "tasks" && (
           <>
-            <ParentRecovery request={api} />
             <div className="filters">
               {[
                 ["all", "הכול"],
@@ -842,6 +841,7 @@ function App() {
               <p>עדכון סיסמת המשפחה או סיסמת ההורה.</p>
               <button className="button" onClick={() => open('passwords','עדכון סיסמה')}>עדכון סיסמאות</button>
             </section>
+            <ParentRecovery request={api} />
             <div className="filters">
               {[
                 ["task", "🧹 ניהול משימות"],
