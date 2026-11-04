@@ -1,3 +1,4 @@
+// Isolated onboarding pilot. Deploy with --config wrangler.pilot.jsonc.
 {
   "name": "family-rewards-pilot",
   "main": "worker/index.ts",
