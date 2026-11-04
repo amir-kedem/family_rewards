@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "instances": [
+    {
+      "id": "family-example",
+      "workerName": "family-rewards-example",
+      "databaseName": "family-rewards-example-db",
+      "databaseId": "REPLACE_WITH_THE_NEW_DATABASE_UUID",
+      "origin": "https://family-rewards-example.YOUR_SUBDOMAIN.workers.dev"
+    }
+  ]
+}
