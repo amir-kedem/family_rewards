@@ -1,4 +1,6 @@
 import { cutoff, digest, hashPassword, verifyPassword } from "./security.ts";
+import {ApiError,body,fail,json} from './http.ts';
+import {onboarding,setupRequired,verifyInstance} from './onboarding.ts';
 // Structural D1 types keep the Worker and Node/SQLite integration tests dependency-free.
 type Statement = {
   bind(...values: unknown[]): Statement;
@@ -13,35 +15,13 @@ type Env = {
   };
   FAMILY_PASSWORD_HASH: string;
   PARENT_PASSWORD_HASH: string;
+  INSTANCE_ID?: string;
+  INSTANCE_ORIGIN?: string;
 };
 type Session = {
   token_hash: string;
   role: "family" | "parent";
   expires_at: number;
-};
-class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-const json = (
-  value: unknown,
-  status = 200,
-  extra: Record<string, string> = {},
-) =>
-  new Response(JSON.stringify(value), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-      ...extra,
-    },
-  });
-const fail = (status: number, message: string): never => {
-  throw new ApiError(status, message);
 };
 const integer = (value: unknown, min = 0, max = 1000000) => {
   if (
@@ -59,18 +39,6 @@ const text = (value: unknown, max = 150) => {
 };
 const cookie = (token: string, parent = false) =>
   `__Host-fr_session=${token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${parent ? 1800 : 604800}`;
-async function body(request: Request) {
-  const raw = await request.text();
-  if (raw.length > 8192) fail(413, "request_too_large");
-  try {
-    const value = JSON.parse(raw);
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      fail(400, "invalid_json");
-    return value;
-  } catch {
-    fail(400, "invalid_json");
-  }
-}
 async function session(request: Request, env: Env): Promise<Session> {
   const token = request.headers
     .get("Cookie")
@@ -116,7 +84,8 @@ async function newSession(
 async function login(request: Request, env: Env, parent: boolean) {
   const previous = parent ? await session(request, env) : undefined;
   const input = await body(request),
-    password = text(input.password, 256);
+    password = input.password;
+  if(typeof password!=='string' || !password.trim() || password.length>256) fail(400,'invalid_text');
   const credentials = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='password_credentials'").first();
   const saved = credentials ? await env.DB.prepare("SELECT password_hash FROM password_credentials WHERE role=?").bind(parent ? 'parent' : 'family').first() : null;
   const encoded = saved?.password_hash || (parent ? env.PARENT_PASSWORD_HASH : env.FAMILY_PASSWORD_HASH);
@@ -231,6 +200,9 @@ async function route(request: Request, env: Env) {
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       fail(415, "json_required");
   }
+  await verifyInstance(request,env);
+  if(path==='/api/setup' || path.startsWith('/api/setup/')) return onboarding(request,env);
+  if(await setupRequired(env)) fail(409,'setup_required');
   if (path === "/api/login" && method === "POST")
     return login(request, env, false);
   if (path === "/api/parent/login" && method === "POST")
@@ -243,8 +215,9 @@ async function route(request: Request, env: Env) {
     parent();
     const input = await body(request);
     if (!['family','parent'].includes(input.role)) fail(400,'invalid_password_role');
-    const password = text(input.newPassword,256);
-    if (password.length < 4) fail(400,'password_too_short');
+    const password = input.newPassword;
+    if(typeof password!=='string' || password.length>256) fail(400,'invalid_text');
+    if (password.trim().length < 4) fail(400,'password_too_short');
     const encoded = await hashPassword(password);
     const token = (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-','');
     // Bootstrap the optional credential store only when a parent first changes
@@ -292,6 +265,7 @@ async function route(request: Request, env: Env) {
       goals: goals.results,
       history: history.results,
       familyGoal: settings?.family_goal,
+      familyName: env.INSTANCE_ID ? (await env.DB.prepare('SELECT family_name FROM instance_identity WHERE id=1').first())?.family_name : 'הבית שלנו',
     });
   }
   if (
