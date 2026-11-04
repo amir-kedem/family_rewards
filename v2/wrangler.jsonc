@@ -1,5 +1,5 @@
 {
-  "name": "family-rewards-v2-api",
+  "name": "family-rewards-v2",
   "main": "worker/index.ts",
   "compatibility_date": "2026-11-04",
   "d1_databases": [
@@ -24,3 +24,4 @@
     ]
   }
 }
+
