@@ -951,3 +951,5 @@ dialog::backdrop {
   .topbar .actions > .button, .topbar .personPicker select { min-height: 38px; padding: 8px; font-size: 11px; white-space: nowrap; }
   .topbar .personPicker select { max-width: 95px; }
 }
+
+.recoveryCode{display:block;font-family:monospace;font-size:1.05rem;overflow-wrap:anywhere;user-select:all;padding:1rem;background:var(--bg,#f4f7f4);border-radius:12px;margin:1rem 0}.recoveryLink{margin-top:1rem}.recovery form{max-width:36rem}.recovery .actions{flex-wrap:wrap}
