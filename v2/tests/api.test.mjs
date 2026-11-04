@@ -83,6 +83,38 @@ function setup() {
     call(path, input, { headers: { "Idempotency-Key": key } });
   return { sql, env, call, login, parent, balance, action };
 }
+test('parent can rotate either password without exposing it or keeping old sessions valid', async () => {
+  const f=setup();
+  assert.equal((await f.call('/passwords',{role:'family',newPassword:'2468'})).status,401);
+  const family=await f.login();
+  const oldFamily=family.headers.get('set-cookie').split(';')[0];
+  assert.equal((await f.call('/passwords',{role:'family',newPassword:'2468'})).status,403);
+  const parentLogin=await f.parent();
+  const oldParent=parentLogin.headers.get('set-cookie').split(';')[0];
+  assert.equal((await f.call('/passwords',{role:'unknown',newPassword:'2468'})).status,400);
+  assert.equal((await f.call('/passwords',{role:'family',newPassword:'123'})).status,400);
+  const changed=await f.call('/passwords',{role:'family',newPassword:'2468'});
+  assert.equal(changed.status,200);
+  assert.deepEqual(changed.data,{ok:true});
+  assert.equal((await f.call('/state',undefined,{headers:{Cookie:oldFamily}})).status,401);
+  assert.equal((await f.call('/state',undefined,{headers:{Cookie:oldParent}})).status,401);
+  assert.equal((await f.call('/state')).data.role,'parent');
+  assert.equal((await f.login()).status,401);
+  assert.equal((await f.call('/login',{password:'2468'})).status,200);
+  await f.parent();
+  const currentParent=await f.call('/state');
+  assert.equal(currentParent.data.role,'parent');
+  const rotated=await f.call('/passwords',{role:'parent',newPassword:'4321'});
+  assert.equal(rotated.status,200);
+  assert.equal((await f.parent()).status,401);
+  assert.equal((await f.call('/parent/login',{password:'4321'})).status,200);
+  const state=await f.call('/state');
+  assert.equal(JSON.stringify(state.data).includes('password_hash'),false);
+  assert.equal(JSON.stringify(state.data).includes('pbkdf2$'),false);
+  const saved=f.sql.prepare('SELECT password_hash FROM password_credentials').all();
+  assert.equal(saved.length,2);
+  assert(saved.every(r=>r.password_hash.startsWith('pbkdf2$100000$')));
+});
 test("authentication, parent enforcement, cookie security and logout invalidation", async () => {
   const f = setup();
   assert.equal((await f.call("/state")).status, 401);
