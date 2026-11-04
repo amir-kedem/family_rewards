@@ -1,0 +1,26 @@
+{
+  "name": "family-rewards-v2-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-04",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "family-rewards-v2",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "17 1 * * *"
+    ]
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  }
+}
