@@ -1,0 +1,101 @@
+name: Family Rewards managed release
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Reviewed immutable version tag (for example v2.1.0)
+        required: true
+        type: string
+      release_sha:
+        description: Full 40-character commit SHA expected for that tag
+        required: true
+        type: string
+      scope:
+        description: Pilot first, then the chosen production targets
+        type: choice
+        options: [pilot, selected, all]
+        default: pilot
+      instance_ids:
+        description: Comma-separated opaque production IDs for selected scope
+        type: string
+      apply:
+        description: Actually deploy (off creates a plan only)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: family-rewards-managed-fleet
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: family-rewards-managed
+    steps:
+      - name: Require default-branch orchestration
+        env:
+          ACTUAL_REF: ${{ github.ref_name }}
+          DEFAULT_REF: ${{ github.event.repository.default_branch }}
+        run: test "$ACTUAL_REF" = "$DEFAULT_REF"
+      - uses: actions/checkout@v4
+        with:
+          path: automation
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate release inputs before checkout
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: node --input-type=module -e "import {validateRelease} from './automation/v2/scripts/release-controls.mjs'; validateRelease(process.env.RELEASE_TAG,process.env.RELEASE_SHA)"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          path: release-source
+          persist-credentials: false
+      - name: Verify tag points to the reviewed commit
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        working-directory: release-source
+        run: test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+      - name: Test and build the selected release once
+        working-directory: release-source/v2
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npm ci
+          npm test
+          python -m unittest discover -s tests -p 'test_*.py'
+          npm run build
+          mkdir -p .private
+          node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.jsonc --outfile .private/release-worker.mjs
+      - name: Plan or apply a sequential pilot-first release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_SCOPE: ${{ inputs.scope }}
+          RELEASE_IDS: ${{ inputs.instance_ids }}
+          RELEASE_APPLY: ${{ inputs.apply }}
+          RELEASE_SOURCE: release-source/v2
+          RELEASE_REPORT: release-results.json
+          FAMILY_REWARDS_INSTANCES: ${{ secrets.FAMILY_REWARDS_INSTANCES }}
+          FAMILY_REWARDS_MANAGED_RELEASES_ENABLED: ${{ vars.FAMILY_REWARDS_MANAGED_RELEASES_ENABLED }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node automation/v2/scripts/managed-release.mjs
+      - name: Save release results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-rewards-release-results
+          path: release-results.json
+          if-no-files-found: ignore
+          retention-days: 30
