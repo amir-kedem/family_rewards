@@ -1,6 +1,7 @@
 import { cutoff, digest, hashPassword, verifyPassword } from "./security.ts";
 import {ApiError,body,fail,json} from './http.ts';
 import {onboarding,setupRequired,verifyInstance} from './onboarding.ts';
+import {generateRecovery,resetParentPassword} from './recovery.ts';
 // Structural D1 types keep the Worker and Node/SQLite integration tests dependency-free.
 type Statement = {
   bind(...values: unknown[]): Statement;
@@ -82,7 +83,14 @@ async function newSession(
   });
 }
 async function login(request: Request, env: Env, parent: boolean) {
-  const previous = parent ? await session(request, env) : undefined;
+  // A parent may sign in directly when the shared family password is forgotten.
+  // An existing session is rotated when present; only a valid parent password
+  // grants access, using the same per-role rate limit as normal elevation.
+  let previous: Session | undefined;
+  if (parent) {
+    try { previous = await session(request,env); }
+    catch(error) { if (!(error instanceof ApiError && error.status === 401)) throw error; }
+  }
   const input = await body(request),
     password = input.password;
   if(typeof password!=='string' || !password.trim() || password.length>256) fail(400,'invalid_text');
@@ -207,10 +215,12 @@ async function route(request: Request, env: Env) {
     return login(request, env, false);
   if (path === "/api/parent/login" && method === "POST")
     return login(request, env, true);
+  if (path === '/api/recovery/reset' && method === 'POST') return resetParentPassword(request,env);
   const user = await session(request, env);
   const parent = () => {
     if (user.role !== "parent") fail(403, "parent_required");
   };
+  if (path === '/api/recovery/code' && method === 'POST') {parent();return generateRecovery(request,env,user.token_hash);}
   if (path === '/api/passwords' && method === 'POST') {
     parent();
     const input = await body(request);
