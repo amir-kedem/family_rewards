@@ -6,3 +6,4 @@ exports/
 dist/
 __pycache__/
 .openai/
+.private/
