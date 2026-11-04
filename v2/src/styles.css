@@ -947,4 +947,11 @@ dialog::backdrop {
   .homeMembers .member strong { font-size: 14px; }
   .historyFilters { gap: 9px; }
   .historyFilters label { flex-basis: 120px; }
+  .topbar { flex-wrap: nowrap; align-items: center; gap: 8px; }
+  .topbar > div:first-child { min-width: 0; flex: 1; }
+  .topbar .greet { display: none; }
+  .topbar .heading { font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+  .topbar .actions { flex-wrap: nowrap; flex-shrink: 0; align-items: center; gap: 5px; }
+  .topbar .actions > .button, .topbar .personPicker select { min-height: 38px; padding: 8px; font-size: 11px; white-space: nowrap; }
+  .topbar .personPicker select { max-width: 95px; }
 }
