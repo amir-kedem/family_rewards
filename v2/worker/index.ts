@@ -1,4 +1,4 @@
-import { cutoff, digest, verifyPassword } from "./security.ts";
+import { cutoff, digest, hashPassword, verifyPassword } from "./security.ts";
 // Structural D1 types keep the Worker and Node/SQLite integration tests dependency-free.
 type Statement = {
   bind(...values: unknown[]): Statement;
@@ -117,7 +117,9 @@ async function login(request: Request, env: Env, parent: boolean) {
   const previous = parent ? await session(request, env) : undefined;
   const input = await body(request),
     password = text(input.password, 256);
-  const encoded = parent ? env.PARENT_PASSWORD_HASH : env.FAMILY_PASSWORD_HASH;
+  const credentials = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='password_credentials'").first();
+  const saved = credentials ? await env.DB.prepare("SELECT password_hash FROM password_credentials WHERE role=?").bind(parent ? 'parent' : 'family').first() : null;
+  const encoded = saved?.password_hash || (parent ? env.PARENT_PASSWORD_HASH : env.FAMILY_PASSWORD_HASH);
   if (!encoded) fail(503, "authentication_not_configured");
   // A per-role cap bounds online guessing even if an attacker rotates addresses.
   const now = Date.now(),
@@ -237,6 +239,25 @@ async function route(request: Request, env: Env) {
   const parent = () => {
     if (user.role !== "parent") fail(403, "parent_required");
   };
+  if (path === '/api/passwords' && method === 'POST') {
+    parent();
+    const input = await body(request);
+    if (!['family','parent'].includes(input.role)) fail(400,'invalid_password_role');
+    const password = text(input.newPassword,256);
+    if (password.length < 4) fail(400,'password_too_short');
+    const encoded = await hashPassword(password);
+    const token = (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-','');
+    // Bootstrap the optional credential store only when a parent first changes
+    // a password. Existing installs keep using their Worker secrets until then.
+    // Rotate affected sessions atomically and keep this parent signed in.
+    await env.DB.batch([
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS password_credentials (role TEXT PRIMARY KEY CHECK(role IN ('family','parent')), password_hash TEXT NOT NULL)"),
+      env.DB.prepare("INSERT INTO password_credentials(role,password_hash) VALUES (?,?) ON CONFLICT(role) DO UPDATE SET password_hash=excluded.password_hash").bind(input.role,encoded),
+      env.DB.prepare('DELETE FROM sessions WHERE role=? OR token_hash=?').bind(input.role,user.token_hash),
+      env.DB.prepare('INSERT INTO sessions VALUES (?,?,?)').bind(await digest(token),'parent',Date.now()+1800000),
+    ]);
+    return json({ok:true},200,{'Set-Cookie':cookie(token,true)});
+  }
   if (path === "/api/logout" && method === "POST") {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?")
       .bind(user.token_hash)
