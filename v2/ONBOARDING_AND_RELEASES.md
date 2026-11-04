@@ -1,6 +1,6 @@
 # New-family onboarding and maintainer-controlled releases
 
-**Status: implementation in progress.** Private target configuration, local provisioning preparation, invitation ownership, draft/resume and the four-step parent wizard are implemented and locally tested. An isolated second-instance Cloudflare pilot is still required. Guided migration, additional parent editing/tour features and release-to-all are not implemented. See [PROVISIONING.md](PROVISIONING.md).
+**Status: implementation in progress.** Private target configuration, local provisioning preparation, invitation ownership, draft/resume and the four-step parent wizard are implemented and locally tested. The maintainer has completed the isolated Cloudflare pilot and reported successful onboarding and normal app use across devices. Parent password recovery and a manual, version-pinned pilot/selected/all workflow are implemented and locally tested. Managed rollout is inactive until the maintainer configures protected credentials and completes deployment cutover. Guided migration and additional parent editing/tour features remain future work. See [PROVISIONING.md](PROVISIONING.md).
 
 ## Direction
 
@@ -84,6 +84,10 @@ Keep family URLs stable. Add an app-version indicator in parent mode and a refre
 
 Cloudflare D1 Free currently allows 10 databases per account, including pilot/staging, with shared account usage quotas. This supports a small initial group without promising unlimited free hosting. Agree on paid hosting or separately owned accounts before exceeding capacity; do not upgrade billing automatically.
 
+## Concurrent use
+
+Each household has a separate Worker and D1 database under the maintainer account. Multiple members may use one household simultaneously. D1 serializes queries per database; atomic writes and idempotency protect balances and retried actions. Cross-device refresh is eventual (after writes, tab activation and periodic polling), not live push. Shared account quotas still apply across households. The pilot is a functional check, not a high-load capacity test.
+
 ## Implementation order
 
 | Phase | Deliverable | Acceptance |
@@ -94,7 +98,7 @@ Cloudflare D1 Free currently allows 10 databases per account, including pilot/st
 | 4. Release controls | Tags, pilot checks, manual selected/all rollout, target status and rollback | Two instances receive the chosen version while retaining different databases, passwords and settings |
 | 5. Handoff | Short tour, sharing, parent editing and version notice | A parent sets up without developer tools; a child chooses a goal and completes an activity |
 
-Finish release controls before inviting a wider group. This document plans the work; it does not activate the wizard or rollout.
+Finish release controls and password recovery before inviting a wider group. See [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md) and [RELEASES.md](RELEASES.md) for the implemented recovery and release controls. Publishing workflow source does not activate managed rollout.
 
 ## Acceptance checks
 
