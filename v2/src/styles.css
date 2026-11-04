@@ -922,3 +922,29 @@ dialog::backdrop {
   font-size: 12px;
   color: #68766e;
 }
+.historySection { scroll-margin-top: 16px; }
+.historyToolbar { position: sticky; top: 8px; z-index: 5; background: #fff; padding: 10px 0; border-bottom: 1px solid #ecf0ed; }
+.historyFilters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 16px 0; }
+.historyFilters label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; flex: 1 1 145px; }
+.historyFilters input, .historyFilters select { width: 100%; min-width: 0; border: 1px solid #dce5df; border-radius: 10px; padding: 9px; background: white; color: #263b30; font: inherit; }
+.homeOverview > * { min-width: 0; }
+.topbar .actions { align-items: flex-end; }
+.topbar .actions > .button, .personPicker select { min-height: 42px; margin-top: 0; }
+@media (max-width: 1000px) {
+  .grid.homeOverview { grid-template-columns: minmax(0, 1fr) minmax(135px, .6fr); gap: 12px; }
+  .homeMembers { padding: 16px; }
+  .homeMembers .avatarStrip { flex-direction: column; margin-top: 14px; gap: 10px; }
+  .homeMembers .member { padding: 7px; }
+  .homeMembers .emojiFace { width: 36px; height: 36px; font-size: 23px; }
+}
+@media (max-width: 700px) {
+  .grid.homeOverview { grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; }
+  .homeOverview .hero { padding: 16px; min-height: 265px; }
+  .homeOverview .bigPoints { font-size: 39px; }
+  .homeOverview .heroFooter { flex-wrap: wrap; gap: 4px 8px; }
+  .homeMembers { padding: 12px 8px; }
+  .homeMembers h2 { font-size: 14px; }
+  .homeMembers .member strong { font-size: 14px; }
+  .historyFilters { gap: 9px; }
+  .historyFilters label { flex-basis: 120px; }
+}
