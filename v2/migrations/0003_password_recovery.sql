@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS parent_recovery (
+ id INTEGER PRIMARY KEY CHECK(id=1), code_hash TEXT NOT NULL, expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recovery_guard (
+ id INTEGER PRIMARY KEY CHECK(id=1), valid INTEGER NOT NULL CHECK(valid=1)
+);
