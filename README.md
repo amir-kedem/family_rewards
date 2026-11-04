@@ -31,7 +31,7 @@ History is retained for six calendar months, independently of available balances
 | New application | [`family-rewards-v2` branch, `v2/`](https://github.com/amir-kedem/family_rewards/tree/family-rewards-v2/v2) |
 | Active deployment | Cloudflare Workers Builds deploys commits from `family-rewards-v2` for the current family instance |
 | Default branch | `main` still contains the legacy Flet application code; this README introduces the new product |
-| New-family setup | Manual provisioning and initialization today; an onboarding wizard is planned |
+| New-family setup | Local provisioning preparation and a secure parent wizard are implemented for newly provisioned private instances; an isolated Cloudflare pilot is still required |
 | Updates to other family instances | A central, versioned release process is planned; release-to-all is not implemented yet |
 
 ## Getting started
@@ -40,7 +40,7 @@ Read the [v2 setup guide](https://github.com/amir-kedem/family_rewards/blob/fami
 
 Google Sheets is an optional migration source. The new app stores activity in D1 and calculates monthly progress from its history; an ongoing `MonthlyLedger` sheet is not required.
 
-The [onboarding and release plan](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/ONBOARDING_AND_RELEASES.md) describes a parent setup wizard, private instances for new families, and maintainer-controlled updates after testing. Those flows are proposed implementation work, not currently available features.
+The [provisioning guide](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/PROVISIONING.md) explains private instance configuration, expiring invitations and the parent setup wizard. The [onboarding and release plan](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/ONBOARDING_AND_RELEASES.md) tracks remaining work, including guided data migration, additional parent editing tools and release-to-all controls.
 
 ## Application structure
 
