@@ -1,3 +1,4 @@
+import {hasPreferences,isActive,memberState,manageMembers} from './members.ts';
 import { cutoff, digest, hashPassword, verifyPassword } from "./security.ts";
 import {ApiError,body,fail,json} from './http.ts';
 import {onboarding,setupRequired,verifyInstance} from './onboarding.ts';
@@ -162,8 +163,10 @@ async function historyWrite(
   }
   try {
     const id = crypto.randomUUID();
-    await env.DB.prepare(
-      "INSERT INTO history (id,member_id,delta,label,kind,at,undo_of,request_key,request_fingerprint) VALUES (?,?,?,?,?,?,?,?,?)",
+    const preferences=kind!=='undo'&&await hasPreferences(env);
+    if(preferences&&!await isActive(env,text(input.memberId)))fail(409,'member_inactive');
+    const written=await env.DB.prepare(
+      "INSERT INTO history (id,member_id,delta,label,kind,at,undo_of,request_key,request_fingerprint) SELECT ?,?,?,?,?,?,?,?,?"+(preferences?" WHERE NOT EXISTS (SELECT 1 FROM member_preferences WHERE member_id=? AND archived=1)":"")+" RETURNING id",
     )
       .bind(
         id,
@@ -175,8 +178,10 @@ async function historyWrite(
         undoOf,
         key,
         fingerprint,
+        ...(preferences?[text(input.memberId)]:[]),
       )
-      .run();
+      .first();
+    if(!written)fail(409,'member_inactive');
     return json({ id }, 201);
   } catch (error) {
     const replay = await env.DB.prepare(
@@ -187,6 +192,7 @@ async function historyWrite(
     if (replay && replay.request_fingerprint === fingerprint)
       return json({ id: replay.id, replayed: true });
     const message = String(error);
+    if(message.includes("member_inactive"))fail(409,"member_inactive");
     if (/insufficient_points|CHECK constraint/.test(message))
       fail(409, "insufficient_points_or_invalid_balance");
     if (/invalid_cancellation|UNIQUE constraint/.test(message))
@@ -221,6 +227,7 @@ async function route(request: Request, env: Env) {
     if (user.role !== "parent") fail(403, "parent_required");
   };
   if (path === '/api/recovery/code' && method === 'POST') {parent();return generateRecovery(request,env,user.token_hash);}
+  if (path === '/api/members' && method === 'POST') {parent();return manageMembers(request,env);}
   if (path === '/api/passwords' && method === 'POST') {
     parent();
     const input = await body(request);
@@ -256,7 +263,7 @@ async function route(request: Request, env: Env) {
   }
   if (path === "/api/state" && method === "GET") {
     const [members, catalog, goals, history, settings] = await Promise.all([
-      env.DB.prepare("SELECT * FROM members ORDER BY rowid").all(),
+      memberState(env),
       env.DB.prepare(
         "SELECT * FROM catalog WHERE active=1 ORDER BY rowid",
       ).all(),
@@ -270,7 +277,10 @@ async function route(request: Request, env: Env) {
     ]);
     return json({
       role: user.role,
-      members: members.results,
+      members: members.active,
+      archivedMembers: user.role==='parent'?members.archived:[],
+      historyMembers: members.historyMembers,
+      memberVersion: members.version,
       catalog: catalog.results,
       goals: goals.results,
       history: history.results,
@@ -375,7 +385,7 @@ async function route(request: Request, env: Env) {
       m = await env.DB.prepare("SELECT * FROM members WHERE id=?")
         .bind(text(input.memberId))
         .first();
-    if (!m || !m.is_child) fail(400, "child_required");
+    if (!m || !m.is_child || !await isActive(env,m.id)) fail(400, "child_required");
     const reward = await env.DB.prepare(
       "SELECT id FROM catalog WHERE id=? AND kind='reward' AND active=1",
     )
