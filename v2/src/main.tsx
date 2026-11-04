@@ -1,3 +1,4 @@
+import {MemberManagement} from './member-management';
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -32,6 +33,9 @@ type Entry = {
 type Data = {
   role: "family" | "parent";
   members: Member[];
+  archivedMembers?: Member[];
+  historyMembers?: Pick<Member,"id"|"name"|"emoji">[];
+  memberVersion?: number;
   catalog: Item[];
   history: Entry[];
   goals: { member_id: string; reward_id: string }[];
@@ -55,6 +59,13 @@ class ApiError extends Error {
   }
 }
 const errors: Record<string, string> = {
+  invalid_member: "בדקו שם, סמל ונקודות התחלה תקינים",
+  member_name_in_use: "השם כבר קיים. אפשר להחזיר משתתף שהוסר או לבחור שם אחר",
+  member_limit_reached: "אפשר להגדיר עד 12 משתתפים פעילים",
+  members_changed_refresh: "רשימת המשתתפים השתנתה. רעננו ונסו שוב",
+  member_not_found: "המשתתף כבר אינו ברשימה",
+  member_inactive: "המשתתף הוסר מהמשתתפים הפעילים",
+  last_member_required: "יש להשאיר לפחות משתתף פעיל אחד",
   invalid_recovery_code: "קוד השחזור שגוי, נוצל או שפג תוקפו",
   login_required: "יש להיכנס מחדש למשפחה",
   incorrect_password: "סיסמה שגויה",
@@ -383,7 +394,7 @@ function App() {
   function historyRows(rows: Entry[]) {
     return rows.length ? (
       rows.map((h) => {
-        const who = data!.members.find((x) => x.id === h.member_id);
+        const who = data!.historyMembers?.find((x) => x.id === h.member_id) || data!.members.find((x) => x.id === h.member_id);
         return (
           <div className="historyItem" key={h.id}>
             <div className="historyLeft">
@@ -841,6 +852,7 @@ function App() {
               <p>עדכון סיסמת המשפחה או סיסמת ההורה.</p>
               <button className="button" onClick={() => open('passwords','עדכון סיסמה')}>עדכון סיסמאות</button>
             </section>
+            <MemberManagement members={data.members} archived={data.archivedMembers||[]} version={data.memberVersion||0} request={api} updated={load} />
             <ParentRecovery request={api} />
             <div className="filters">
               {[
@@ -1021,7 +1033,7 @@ function App() {
                 <p>
                   לבטל את <strong>{dialog.entry?.label}</strong> עבור{" "}
                   {
-                    data.members.find((x) => x.id === dialog.entry?.member_id)
+                    (data.historyMembers||data.members).find((x) => x.id === dialog.entry?.member_id)
                       ?.name
                   }
                   ?
