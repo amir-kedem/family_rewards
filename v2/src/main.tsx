@@ -648,7 +648,7 @@ function App() {
         )}
         {tab === "home" && (
           <>
-            <div className="grid homeOverview">
+            <div className="homeOverview">
               <section className="hero">
                 <div>
                   <div className="heroTop">⭐ הנקודות של {m.name}</div>
@@ -679,22 +679,6 @@ function App() {
                     <span>{n(monthlyPoints)} נק׳ צברנו החודש</span>
                     <span>יעד: {n(data.familyGoal)} נק׳</span>
                   </div>
-                </div>
-              </section>
-              <section className="card homeMembers">
-                <h2>המשפחה שלנו 💚</h2>
-                <div className="avatarStrip">
-                  {data.members.map((x) => (
-                    <button
-                      className={"member " + (person === x.id ? "active" : "")}
-                      key={x.id}
-                      onClick={() => setPerson(x.id)}
-                    >
-                      <span className="emojiFace">{x.emoji}</span>
-                      <strong>{x.name}</strong>
-                      <span>{n(x.points)} נק׳</span>
-                    </button>
-                  ))}
                 </div>
               </section>
             </div>
