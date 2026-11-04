@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.dev.vars
+import.sql
+exports/
+dist/
+__pycache__/
+.openai/
