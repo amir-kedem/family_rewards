@@ -63,6 +63,8 @@ const errors: Record<string, string> = {
   invalid_number: "יש להזין מספר שלם בטווח המותר",
   balance_unchanged: "לא בוצע שינוי ביתרה",
   invalid_text: "יש למלא את כל השדות",
+  password_too_short: "יש לבחור סיסמה באורך 4 תווים לפחות",
+  invalid_password_role: "יש לבחור סיסמת משפחה או סיסמת הורה",
   item_not_found: "הפריט כבר אינו זמין",
   action_not_found: "הפעולה כבר אינה ביומן",
   invalid_cancellation: "לא ניתן לבטל פעולה זו",
@@ -209,7 +211,7 @@ function App() {
   useEffect(() => {
     if (data?.role !== "parent" && tab === "admin") setTab("home");
   }, [data?.role, tab]);
-  const m = data?.members.find((x) => x.id === person),
+  const m = data?.members.find((x) => x.id === person) || {id:"",name:"המשפחה",points:0,emoji:"⭐",is_child:1},
     parent = data?.role === "parent",
     rewards = data?.catalog.filter((x) => x.kind === "reward") || [],
     tasks = data?.catalog.filter((x) => x.kind === "task") || [],
@@ -295,6 +297,11 @@ function App() {
         );
       if (kind === "familyGoal")
         await execute("/settings", { familyGoal: Number(values.familyGoal) });
+      if (kind === "passwords") {
+        if (values.newPassword !== values.confirmPassword) throw new Error("הסיסמאות אינן זהות");
+        await execute('/passwords',{role:values.role,newPassword:values.newPassword});
+        setNotice('הסיסמה עודכנה ✓');
+      }
       if (kind === "catalog")
         await execute("/catalog", {
           id: item?.id || dialog.key,
@@ -519,13 +526,6 @@ function App() {
         >
           ניסיון חוזר
         </button>
-      </main>
-    );
-  if (!m)
-    return (
-      <main className="login card">
-        <h1>הבית כמעט מוכן 🌱</h1>
-        <p>יש להשלים את ייבוא נתוני המשפחה לפני תחילת השימוש.</p>
       </main>
     );
   const visibleTabs = tabs.filter((t) => parent || t[0] !== "admin");
@@ -808,6 +808,11 @@ function App() {
                 <span>משימות</span>
               </div>
             </div>
+            <section className="card">
+              <h2>סיסמאות</h2>
+              <p>עדכון סיסמת המשפחה או סיסמת ההורה.</p>
+              <button className="button" onClick={() => open('passwords','עדכון סיסמה')}>עדכון סיסמאות</button>
+            </section>
             <div className="filters">
               {[
                 ["task", "🧹 ניהול משימות"],
@@ -1036,6 +1041,14 @@ function App() {
                   required
                 />
               </label>
+            )}
+            {dialog.kind === 'passwords' && (
+              <>
+                <label>איזו סיסמה לעדכן?<select name="role" defaultValue="family"><option value="family">סיסמת המשפחה</option><option value="parent">סיסמת ההורה</option></select></label>
+                <label>סיסמה חדשה<input name="newPassword" type="password" autoComplete="new-password" minLength={4} maxLength={256} required /></label>
+                <label>אימות הסיסמה<input name="confirmPassword" type="password" autoComplete="new-password" minLength={4} maxLength={256} required /></label>
+                <p>לפחות 4 תווים. אחרי עדכון סיסמת המשפחה, יש להיכנס מחדש במכשירים האחרים. אחרי עדכון סיסמת ההורה, מצבי הורה אחרים ייסגרו.</p>
+              </>
             )}
             {dialog.kind === "catalog" && (
               <>
