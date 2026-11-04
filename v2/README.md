@@ -15,7 +15,7 @@ React/TypeScript interface and Cloudflare Worker/D1 backend for the current Hebr
 
 ## First-run status
 
-One Worker and D1 database serve one family. Newly provisioned instances have an invitation-gated parent wizard for adding/reordering children, opening balances, optional activities/prizes, the monthly goal and review. Existing family installations bypass it. Parents need not appear as point-earning participants. See [PROVISIONING.md](PROVISIONING.md) for the local preparation tool and Cloudflare pilot requirements. Provisioning does not yet create Cloudflare resources automatically; guided workbook import and release-to-all remain future work.
+One Worker and D1 database serve one family. Newly provisioned instances have an invitation-gated parent wizard for adding/reordering children, opening balances, optional activities/prizes, the monthly goal and review. Existing family installations bypass it. Parents need not appear as point-earning participants. See [PROVISIONING.md](PROVISIONING.md) for the local preparation tool and Cloudflare pilot requirements. Provisioning does not yet create Cloudflare resources automatically; guided workbook import remains future work. Parent password recovery is documented in [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md). Managed pilot/selected/all rollout is implemented but inactive pending protected credentials and cutover; see [RELEASES.md](RELEASES.md).
 
 ## Validation
 
@@ -31,7 +31,7 @@ python -m unittest discover -s tests -p 'test_*.py'
 npm run build
 ```
 
-API tests run the actual Worker handlers against in-memory SQLite via a small D1-compatible adapter. They cover permissions, cookies, retries, concurrent redemptions, older-action cancellation, stale edits, catalog retirement and retention. A final Cloudflare runtime and two-device smoke test is also required.
+API tests run the actual Worker handlers against in-memory SQLite via a small D1-compatible adapter. They cover permissions, cookies, retries, concurrent redemptions, older-action cancellation, stale edits, catalog retirement and retention. The isolated Cloudflare pilot was completed by the maintainer with successful onboarding and normal two-device use. New features still need their own runtime smoke checks.
 
 ## Cloudflare setup
 
@@ -114,7 +114,7 @@ The active instance uses Cloudflare Workers Builds with production branch `famil
 
 The older `.github/workflows/family-rewards-v2.yml` is a separate opt-in Actions path targeting `main` and `family-rewards-v2-backend`. Its deployment job requires `FAMILY_REWARDS_V2_ENABLED=true`, environment secrets `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`, and variable `FAMILY_REWARDS_V2_DATABASE_ID`. It is not the active Workers Builds integration or a multi-instance release workflow. Use one deployment owner per instance.
 
-The planned central release flow is described in [ONBOARDING_AND_RELEASES.md](ONBOARDING_AND_RELEASES.md). It will deploy approved versions to selected or all registered private instances while preserving their individual databases, credentials and settings. This workflow is not implemented yet.
+The planned central release flow is described in [ONBOARDING_AND_RELEASES.md](ONBOARDING_AND_RELEASES.md). It will deploy approved versions to selected or all registered private instances while preserving their individual databases, credentials and settings. The manual workflow is now implemented, but it requires explicit activation and cutover before use. See [RELEASES.md](RELEASES.md).
 
 Before releases, also check password updates, mobile header alignment, sorting, monthly/personal goals, and history date/type filters on two devices. Use test data for destructive checks. Limit deployment tokens to their intended account/resources and keep them out of chat/source.
 
