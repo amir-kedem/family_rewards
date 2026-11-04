@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { monthlyGoalPoints } from "./monthly-goal";
 type Member = {
   id: string;
   name: string;
@@ -216,7 +217,8 @@ function App() {
       (r) =>
         r.id === data?.goals.find((g) => g.member_id === person)?.reward_id,
     ),
-    total = data?.members.reduce((sum, x) => sum + x.points, 0) || 0;
+    total = data?.members.reduce((sum, x) => sum + x.points, 0) || 0,
+    monthlyPoints = monthlyGoalPoints(data?.history || []);
   const open = (kind: string, title: string, extra: Partial<Dialog> = {}) => {
     setError("");
     setNotice("");
@@ -642,11 +644,11 @@ function App() {
                 </div>
                 <div>
                   <div className="heroFooter">
-                    <span>ההתקדמות של כל המשפחה</span>
+                    <span>היעד החודשי של כל המשפחה</span>
                     <strong>
                       {Math.min(
                         100,
-                        Math.round((total / data.familyGoal) * 100),
+                        Math.round((monthlyPoints / data.familyGoal) * 100),
                       )}
                       %
                     </strong>
@@ -655,12 +657,12 @@ function App() {
                     <div
                       style={{
                         width:
-                          Math.min(100, (total / data.familyGoal) * 100) + "%",
+                          Math.min(100, (monthlyPoints / data.familyGoal) * 100) + "%",
                       }}
                     />
                   </div>
                   <div className="heroFooter" style={{ marginTop: 10 }}>
-                    <span>{n(total)} נק׳ צברנו</span>
+                    <span>{n(monthlyPoints)} נק׳ צברנו החודש</span>
                     <span>יעד: {n(data.familyGoal)} נק׳</span>
                   </div>
                 </div>
