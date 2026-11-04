@@ -2,8 +2,8 @@ const textEncoder = new TextEncoder();
 const hex = bytes => Array.from(bytes, x => x.toString(16).padStart(2, '0')).join('');
 
 export async function makePasswordVerifier(password) {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 256) {
-    throw new Error('יש לבחור סיסמה באורך 12 עד 256 תווים');
+  if (typeof password !== 'string' || password.length < 4 || password.length > 256) {
+    throw new Error('יש לבחור סיסמה באורך 4 עד 256 תווים');
   }
   const salt = hex(crypto.getRandomValues(new Uint8Array(24)));
   const key = await crypto.subtle.importKey('raw', textEncoder.encode(password), 'PBKDF2', false, ['deriveBits']);
