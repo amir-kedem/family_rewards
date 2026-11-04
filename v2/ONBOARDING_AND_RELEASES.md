@@ -1,6 +1,6 @@
 # New-family onboarding and maintainer-controlled releases
 
-**Status: proposed implementation plan.** The app is running for one family. The wizard, provisioning tools and release-to-all workflow below are not implemented yet.
+**Status: implementation in progress.** Private target configuration, local provisioning preparation, invitation ownership, draft/resume and the four-step parent wizard are implemented and locally tested. An isolated second-instance Cloudflare pilot is still required. Guided migration, additional parent editing/tour features and release-to-all are not implemented. See [PROVISIONING.md](PROVISIONING.md).
 
 ## Direction
 
