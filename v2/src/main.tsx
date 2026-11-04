@@ -601,9 +601,9 @@ function App() {
           </div>
           <div className="actions">
             <label className="personPicker">
-              הנקודות של
               <select
                 className="select"
+                aria-label="בחירת ילד"
                 value={person}
                 onChange={(e) => setPerson(e.target.value)}
               >
