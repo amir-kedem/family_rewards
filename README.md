@@ -20,6 +20,8 @@ The current product is **Family Rewards 2**, built with React and TypeScript on 
 | --- | --- |
 | Select a child, complete activities, choose a reward goal and browse history | Redeem prizes, cancel individual new actions, correct balances with a reason, manage activities/prizes, edit the monthly target and update family/parent passwords |
 
+Parents can sign in directly if the family password is forgotten. In parent mode, a parent can generate a private, single-use recovery code after confirming the current parent password. The code resets a forgotten parent password and signs out existing sessions; it must be saved privately before it is needed. See the [recovery guide](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/PASSWORD_RECOVERY.md).
+
 Both passwords accept four or more characters. Family sessions last seven days and parent sessions 30 minutes. Password updates invalidate affected old sessions. Family data and credentials are not included in the public source.
 
 History is retained for six calendar months, independently of available balances. Imported legacy activity is viewable; parents can correct balances when reliable cancellation links are missing.
@@ -31,8 +33,8 @@ History is retained for six calendar months, independently of available balances
 | New application | [`family-rewards-v2` branch, `v2/`](https://github.com/amir-kedem/family_rewards/tree/family-rewards-v2/v2) |
 | Active deployment | Cloudflare Workers Builds deploys commits from `family-rewards-v2` for the current family instance |
 | Default branch | `main` still contains the legacy Flet application code; this README introduces the new product |
-| New-family setup | Local provisioning preparation and a secure parent wizard are implemented for newly provisioned private instances; an isolated Cloudflare pilot is still required |
-| Updates to other family instances | A central, versioned release process is planned; release-to-all is not implemented yet |
+| New-family setup | Private invitation and parent wizard implemented; maintainer completed an isolated Cloudflare pilot and reported successful functional checks |
+| Updates to other family instances | Manual versioned pilot/selected/all workflow implemented with plan mode; activation requires protected credentials and deployment cutover |
 
 ## Getting started
 
@@ -40,7 +42,7 @@ Read the [v2 setup guide](https://github.com/amir-kedem/family_rewards/blob/fami
 
 Google Sheets is an optional migration source. The new app stores activity in D1 and calculates monthly progress from its history; an ongoing `MonthlyLedger` sheet is not required.
 
-The [provisioning guide](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/PROVISIONING.md) explains private instance configuration, expiring invitations and the parent setup wizard. The [onboarding and release plan](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/ONBOARDING_AND_RELEASES.md) tracks remaining work, including guided data migration, additional parent editing tools and release-to-all controls.
+The [provisioning guide](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/PROVISIONING.md) explains private instance configuration, expiring invitations and the parent setup wizard. The [onboarding and release plan](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/ONBOARDING_AND_RELEASES.md) tracks remaining work, including guided data migration and additional parent editing tools. The [release guide](https://github.com/amir-kedem/family_rewards/blob/family-rewards-v2/v2/RELEASES.md) explains reviewed versions, pilot-first rollout and the required activation steps.
 
 ## Application structure
 
