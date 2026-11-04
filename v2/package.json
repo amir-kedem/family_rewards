@@ -1,0 +1,29 @@
+{
+  "name": "family-rewards-v2",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "dev": "node scripts/dev.mjs",
+    "deploy": "npm run build && wrangler deploy",
+    "credentials": "node scripts/hash-password.mjs",
+    "build": "tsc && vite build",
+    "dev:ui": "vite --host 0.0.0.0",
+    "dev:api": "wrangler dev"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "wrangler": "4.157.0"
+  }
+}
