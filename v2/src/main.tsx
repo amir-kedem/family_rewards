@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { monthlyGoalPoints } from "./monthly-goal";
+import { byPoints, filterActivity } from "./activity-view";
 type Member = {
   id: string;
   name: string;
@@ -166,6 +167,9 @@ function App() {
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("home"),
     [historyExpanded, setHistoryExpanded] = useState(false),
+    [historyFrom, setHistoryFrom] = useState(""),
+    [historyTo, setHistoryTo] = useState(""),
+    [historyType, setHistoryType] = useState("all"),
     [person, setPerson] = useState(""),
     [manage, setManage] = useState("task"),
     [category, setCategory] = useState("all"),
@@ -213,14 +217,24 @@ function App() {
   }, [data?.role, tab]);
   const m = data?.members.find((x) => x.id === person) || {id:"",name:"המשפחה",points:0,emoji:"⭐",is_child:1},
     parent = data?.role === "parent",
-    rewards = data?.catalog.filter((x) => x.kind === "reward") || [],
-    tasks = data?.catalog.filter((x) => x.kind === "task") || [],
+    rewards = byPoints(data?.catalog.filter((x) => x.kind === "reward") || []),
+    tasks = byPoints(data?.catalog.filter((x) => x.kind === "task") || []),
     goal = rewards.find(
       (r) =>
         r.id === data?.goals.find((g) => g.member_id === person)?.reward_id,
     ),
     total = data?.members.reduce((sum, x) => sum + x.points, 0) || 0,
     monthlyPoints = monthlyGoalPoints(data?.history || []);
+  const historySection = useRef<HTMLElement>(null);
+  const visibleHistory = filterActivity(data?.history || [], {expanded:historyExpanded,from:historyFrom,to:historyTo,type:historyType});
+  function toggleHistory() {
+    if (historyExpanded) {
+      setHistoryFrom(''); setHistoryTo('');
+      requestAnimationFrame(() => historySection.current?.scrollIntoView({block:'start',behavior:'smooth'}));
+    }
+    setHistoryExpanded(value => !value);
+  }
+  const historyToggle = () => <button className="button" aria-expanded={historyExpanded} aria-controls="historyList" onClick={toggleHistory}>{historyExpanded ? "הצגת 8 ימים אחרונים ↑" : "הצגת 6 חודשים ↓"}</button>;
   const open = (kind: string, title: string, extra: Partial<Dialog> = {}) => {
     setError("");
     setNotice("");
@@ -634,7 +648,7 @@ function App() {
         )}
         {tab === "home" && (
           <>
-            <div className="grid">
+            <div className="grid homeOverview">
               <section className="hero">
                 <div>
                   <div className="heroTop">⭐ הנקודות של {m.name}</div>
@@ -667,7 +681,7 @@ function App() {
                   </div>
                 </div>
               </section>
-              <section className="card">
+              <section className="card homeMembers">
                 <h2>המשפחה שלנו 💚</h2>
                 <div className="avatarStrip">
                   {data.members.map((x) => (
@@ -696,7 +710,7 @@ function App() {
             </section>
             <section className="section">
               <div className="sectionHead">
-                <h2>מה חדש בבית? 🕒</h2>
+                <div><h2>מה חדש בבית? 🕒</h2><span className="smallMuted">4 הפעולות האחרונות</span></div>
                 <button
                   className="textLink"
                   onClick={() => navigate("history")}
@@ -775,7 +789,7 @@ function App() {
           </>
         )}
         {tab === "history" && (
-          <section className="card">
+          <section className="card historySection" ref={historySection}>
             <div className="sectionHead">
               <h2>יומן הנקודות</h2>
               <span className="smallMuted">{historyExpanded ? "6 החודשים האחרונים" : "8 הימים האחרונים"}</span>
@@ -783,13 +797,22 @@ function App() {
             <p className="subtitle">
               פעילות ישנה מ־6 חודשים נמחקת אוטומטית. יתרות הנקודות נשמרות.
             </p>
+            <div className="historyToolbar">{historyToggle()}</div>
+            <div className="historyFilters">
+              <label>מתאריך<input type="date" value={historyFrom} onChange={e => {setHistoryFrom(e.target.value);if(e.target.value)setHistoryExpanded(true);}} /></label>
+              <label>עד תאריך<input type="date" value={historyTo} min={historyFrom || undefined} onChange={e => {setHistoryTo(e.target.value);if(e.target.value)setHistoryExpanded(true);}} /></label>
+              <label>סוג פעולה<select value={historyType} onChange={e => setHistoryType(e.target.value)}><option value="all">כל הסוגים</option><option value="task">פעילויות</option><option value="reward">מימוש פרסים</option><option value="adjust">תיקוני נקודות</option><option value="undo">ביטולים</option></select></label>
+              <button className="button ghost" onClick={() => {setHistoryFrom('');setHistoryTo('');setHistoryType('all');}}>ניקוי מסננים</button>
+            </div>
+            {historyFrom && historyTo && historyFrom > historyTo && <p className="error" role="alert">תאריך הסיום צריך להיות אחרי תאריך ההתחלה.</p>}
+            <p className="smallMuted" role="status">{n(visibleHistory.length)} פעולות מוצגות</p>
             {parent && (
               <div className="infoBox">
                 לביטול פעולה, בחרו ״ביטול פעולה״ לצידה. כל ביטול מתועד ביומן.
               </div>
             )}
-            <div id="historyList" className="recent">{historyRows(historyExpanded ? data.history : data.history.filter(h => new Date(h.at).getTime() >= Date.now() - 8 * 24 * 60 * 60 * 1000))}</div>
-            <div className="controlsRow"><button className="button" aria-expanded={historyExpanded} aria-controls="historyList" onClick={() => setHistoryExpanded(value => !value)}>{historyExpanded ? "הצגת 8 ימים אחרונים ↑" : "הצגת 6 חודשים ↓"}</button></div>
+            <div id="historyList" className="recent">{historyRows(visibleHistory)}</div>
+            <div className="controlsRow">{historyToggle()}</div>
           </section>
         )}
         {tab === "admin" && parent && (
@@ -898,6 +921,7 @@ function App() {
                   <tbody>
                     {data.catalog
                       .filter((x) => x.kind === manage)
+                      .sort((a,b) => a.value - b.value)
                       .map((item) => (
                         <tr key={item.id}>
                           <td>
