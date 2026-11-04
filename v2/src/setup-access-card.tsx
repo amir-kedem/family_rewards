@@ -1,0 +1,13 @@
+import React,{useState} from 'react';
+export function SetupAccessCard({familyName,code,expiresAt,done}:{familyName:string;code:string;expiresAt:number;done:()=>void}){
+ const [saved,setSaved]=useState(false),[notice,setNotice]=useState('');
+ const url=location.origin+'/',expiry=new Date(expiresAt).toLocaleDateString('he-IL');
+ async function copy(value:string){try{await navigator.clipboard.writeText(value);setNotice('הועתק ✓');}catch{setNotice('לא ניתן להעתיק אוטומטית. סמנו והעתיקו את הפרט הרצוי.');}}
+ function download(){const text='Family Rewards — '+familyName+'\n\nכתובת הבית הקבועה: '+url+'\n\nקוד שחזור פרטי להורה: '+code+'\nבתוקף עד: '+expiry+'\n\nהקוד מיועד לשימוש אחד. שמרו את הקובץ במקום פרטי, בנפרד מהילדים.\nזה אינו קוד הכניסה למשפחה. סיסמאות אינן כלולות בקובץ.\n';const link=document.createElement('a'),objectUrl=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));link.href=objectUrl;link.download='family-rewards-private-access.txt';link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);setNotice('הקובץ הוכן לשמירה. ודאו שהוא נשמר במקום פרטי.');}
+ return <main className="card setupWizard setupAccess"><span className="setupEyebrow">עוד רגע, שומרים דרך חזרה</span><h1>הבית שלכם מוכן 🌱</h1><p>לפני שמתחילים, שמרו את כתובת הבית ואת קוד השחזור. כך תוכלו לחזור לאפליקציה גם ממכשיר אחר.</p>
+ <section><h2>הכתובת הקבועה של הבית</h2><p>זה הקישור לשימוש יומיומי, ללא קוד ההזמנה. אפשר לשמור כסימנייה או להוסיף למסך הבית דרך תפריט הדפדפן.</p><input aria-label="כתובת הבית הקבועה" value={url} readOnly dir="ltr"/><button className="button" onClick={()=>void copy(url)}>העתקת כתובת הבית</button></section>
+ <section><h2>קוד שחזור פרטי להורה</h2><p>הקוד מוצג כעת בלבד. הוא מאפשר לבחור סיסמת הורה חדשה אם תשכחו אותה. שומרים אצל ההורים, ולא משתפים עם הילדים.</p><output className="recoveryCode" dir="ltr">{code}</output><p className="smallMuted">לשימוש אחד, בתוקף עד {expiry}. אפשר להחליפו בהמשך בניהול.</p><button className="button" onClick={()=>void copy(code)}>העתקת קוד השחזור</button></section>
+ <button className="button" onClick={download}>שמירת כרטיס גישה פרטי: כתובת וקוד שחזור</button>
+ {notice&&<p role="status">{notice}</p>}<label className="accessSaved"><input type="checkbox" checked={saved} onChange={e=>setSaved(e.target.checked)}/>שמרתי את כתובת הבית ואת קוד השחזור במקום פרטי</label><button className="button primary" disabled={!saved} onClick={done}>כניסה לבית שלנו</button>
+ <p className="smallMuted">לא מצליחים למצוא את הכתובת בעתיד? אפשר לבקש ממי שהזמין אתכם לשלוח שוב את קישור הבית. אם תסגרו את המסך לפני שמירת הקוד, היכנסו למצב הורה וצרו קוד חדש בניהול.</p></main>;
+}
