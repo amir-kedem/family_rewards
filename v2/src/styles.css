@@ -552,7 +552,8 @@ select:focus-visible {
   opacity: 1;
   transform: translateY(0);
 }
-.mobileNav {
+.mobileNav,
+.mobileAccount {
   display: none;
 }
 .infoBox {
@@ -610,11 +611,20 @@ select:focus-visible {
 }
 @media (max-width: 700px) {
   .shell {
-    padding: 16px 15px 95px;
+    padding: 16px 15px calc(83px + max(12px, env(safe-area-inset-bottom)));
     display: block;
   }
   .side {
     display: none;
+  }
+  .mobileAccount {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .mobileAccount button {
+    min-height: 44px;
+    padding-inline: 16px;
   }
   .topbar {
     padding: 8px 0 22px;

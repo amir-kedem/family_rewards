@@ -575,6 +575,23 @@ function App() {
       </main>
     );
   const visibleTabs = tabs.filter((t) => parent || t[0] !== "admin");
+  const familyLogout = (
+    <button
+      className="textLink"
+      disabled={busy}
+      onClick={async () => {
+        try {
+          await api("/logout", {});
+          setData(null);
+          setLogin(true);
+        } catch (e) {
+          setError((e as Error).message);
+        }
+      }}
+    >
+      יציאה
+    </button>
+  );
   return (
     <div className="shell">
       <aside className="side">
@@ -596,21 +613,7 @@ function App() {
         ))}
         <div className="sideBottom">
           <span className="smallMuted">כל משימה קטנה היא הצלחה 🌱</span>
-          <button
-            className="textLink"
-            disabled={busy}
-            onClick={async () => {
-              try {
-                await api("/logout", {});
-                setData(null);
-                setLogin(true);
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
-          >
-            יציאה מהמשפחה
-          </button>
+          {familyLogout}
         </div>
       </aside>
       <main className="content">
@@ -972,6 +975,7 @@ function App() {
             )}
           </>
         )}
+        <footer className="mobileAccount">{familyLogout}</footer>
       </main>
       <nav className="mobileNav" aria-label="ניווט">
         {visibleTabs.map(([id, icon, label]) => (
