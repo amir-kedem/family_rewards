@@ -852,48 +852,48 @@ function App() {
               <p>עדכון סיסמת המשפחה או סיסמת ההורה.</p>
               <button className="button" onClick={() => open('passwords','עדכון סיסמה')}>עדכון סיסמאות</button>
             </section>
-            <MemberManagement members={data.members} archived={data.archivedMembers||[]} version={data.memberVersion||0} request={api} updated={load} />
             <ParentRecovery request={api} />
             <div className="filters">
               {[
                 ["task", "🧹 ניהול משימות"],
                 ["reward", "🎁 ניהול פרסים"],
                 ["balances", "⚖️ יתרות ויעדים"],
+                ["members", "👥 ניהול משתתפים"],
               ].map(([id, label]) => (
                 <button
                   key={id}
                   className={"chip " + (manage === id ? "active" : "")}
+                  aria-pressed={manage === id}
                   onClick={() => setManage(id)}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            {manage === "balances" ? (
+            {manage === "members" ? (
+              <MemberManagement
+                members={data.members}
+                archived={data.archivedMembers || []}
+                version={data.memberVersion || 0}
+                request={api}
+                updated={load}
+                adjust={(member) =>
+                  open("adjust", "תיקון נקודות — " + member.name, {
+                    memberId: member.id,
+                    expectedBalance: member.points,
+                  })
+                }
+              />
+            ) : manage === "balances" ? (
               <div className="twoCols">
                 <section className="card">
-                  <h2>תיקון נקודות</h2>
+                  <h2>יתרות נקודות</h2>
                   <table className="adminTable">
                     <tbody>
-                      {data.members.map((x) => (
-                        <tr key={x.id}>
-                          <td>
-                            {x.emoji} {x.name}
-                          </td>
-                          <td>{n(x.points)} נק׳</td>
-                          <td>
-                            <button
-                              className="button"
-                              onClick={() =>
-                                open("adjust", `תיקון נקודות — ${x.name}`, {
-                                  memberId: x.id,
-                                  expectedBalance: x.points,
-                                })
-                              }
-                            >
-                              עריכה ✎
-                            </button>
-                          </td>
+                      {data.members.map((member) => (
+                        <tr key={member.id}>
+                          <th scope="row">{member.emoji} {member.name}</th>
+                          <td>{n(member.points)} נק׳</td>
                         </tr>
                       ))}
                     </tbody>

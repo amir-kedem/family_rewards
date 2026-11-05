@@ -954,5 +954,68 @@ dialog::backdrop {
 
 .recoveryCode{display:block;font-family:monospace;font-size:1.05rem;overflow-wrap:anywhere;user-select:all;padding:1rem;background:var(--bg,#f4f7f4);border-radius:12px;margin:1rem 0}.recoveryLink{margin-top:1rem}.recovery form{max-width:36rem}.recovery .actions{flex-wrap:wrap}
 
-.memberList{display:grid;gap:14px}.memberRow{padding:16px 0;border-bottom:1px solid #e2ebe5}.memberEdit{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.memberEdit label{flex:1;min-width:120px}.memberEdit .memberEmoji{flex:0 0 90px;min-width:70px}.memberButtons{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.memberAdd{margin-top:24px}.memberArchived{margin-top:24px;border-top:1px solid #dce6df;padding-top:18px}.memberArchived summary{cursor:pointer;font-weight:700}.archivedRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}@media(max-width:600px){.memberEdit label{min-width:140px}.memberEdit .memberEmoji{min-width:70px}.archivedRow{align-items:start;flex-direction:column}}
+.memberManagement .sectionHead,
+.memberBalance,
+.memberButtons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.memberManagement .sectionHead h2,
+.memberEditor h3 { margin: 0; }
+.memberList { display: grid; gap: 8px; }
+.memberSummary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dce6df;
+  border-radius: 14px;
+  background: white;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.memberSummary strong { overflow-wrap: anywhere; }
+.memberSummary[aria-pressed="true"],
+.memberSymbolGrid .button[aria-pressed="true"] {
+  background: #e6f5eb;
+  border-color: #287f56;
+}
+.memberAvatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #f1f7f3;
+  font-size: 23px;
+}
+.memberEditor {
+  margin-top: 14px;
+  padding: clamp(12px, 3vw, 22px);
+  border: 1px solid #dce6df;
+  border-radius: 16px;
+  background: #f7faf8;
+}
+.memberBalance { margin: 14px 0; }
+.memberSymbols { margin: 0 0 14px; padding: 0; border: 0; min-width: 0; }
+.memberSymbolGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.memberSymbolGrid .button { min-height: 44px; padding: 4px; font-size: 21px; }
+.memberCustomSymbol { margin-top: 10px; }
+.memberCustomSymbol summary { cursor: pointer; }
+.memberButtons { justify-content: flex-start; }
+.memberArchived { margin-top: 16px; border-top: 1px solid #dce6df; padding-top: 14px; }
+.memberArchived summary { cursor: pointer; font-weight: 700; }
+.archivedRow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
 .setupAccess section{margin:22px 0;padding:20px 0;border-top:1px solid #e1eae4}.setupAccess input[readonly]{width:100%;margin-bottom:12px;border:1px solid #dce6df;border-radius:12px;padding:13px;font:inherit}.accessSaved{display:flex!important;align-items:start;gap:10px;margin:24px 0!important}.accessSaved input{width:auto;flex:0 0 auto;margin-top:5px}
