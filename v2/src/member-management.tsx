@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChildEmojiPicker } from "./child-emoji-picker";
 
 type Member = { id: string; name: string; emoji: string; points: number };
 type Props = {
@@ -9,11 +10,6 @@ type Props = {
   updated: () => Promise<unknown>;
   adjust: (member: Member) => void;
 };
-
-const symbols = [
-  "⭐", "🌟", "🐱", "🐶", "🐰", "🦊", "🐼", "🐨", "🐯", "🦁", "🦄", "🐸",
-  "🐙", "🦋", "🐬", "🦉", "🐢", "🐝", "🌈", "🌻", "🚀", "⚽", "🎨", "🎮",
-];
 
 export function MemberManagement({ members, archived, version, request, updated, adjust }: Props) {
   const [busy, setBusy] = useState(false);
@@ -106,33 +102,11 @@ export function MemberManagement({ members, archived, version, request, updated,
             if (saved) setEditor(null);
           }}>
             <label>שם<input name="name" defaultValue={member?.name} autoFocus maxLength={40} required disabled={busy} /></label>
-            <fieldset className="memberSymbols" disabled={busy}>
-              <legend>בחירת סמל</legend>
-              <div className="memberSymbolGrid">
-                {Array.from(new Set([...symbols, member?.emoji ?? "⭐"])).map((symbol) => (
-                  <button
-                    key={symbol}
-                    type="button"
-                    className="button"
-                    aria-pressed={editor.emoji === symbol}
-                    onClick={() => setEditor({ ...editor, emoji: symbol })}
-                  >
-                    {symbol}
-                  </button>
-                ))}
-              </div>
-              <details className="memberCustomSymbol">
-                <summary>סמל אחר</summary>
-                <label>
-                  סמל מותאם אישית
-                  <input
-                    value={editor.emoji}
-                    maxLength={16}
-                    onChange={(event) => setEditor({ ...editor, emoji: event.target.value })}
-                  />
-                </label>
-              </details>
-            </fieldset>
+            <ChildEmojiPicker
+              value={editor.emoji}
+              disabled={busy}
+              onChange={(emoji) => setEditor({ ...editor, emoji })}
+            />
             {adding && (
               <>
                 <label>נקודות התחלה<input name="points" type="number" min={0} max={1000000000} step={1} defaultValue={0} required disabled={busy} /></label>

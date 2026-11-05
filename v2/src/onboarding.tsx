@@ -1,3 +1,4 @@
+import { ChildEmojiPicker } from "./child-emoji-picker";
 import React,{useEffect,useState} from 'react';
 import {SetupAccessCard} from './setup-access-card';
 type Draft={familyName:string;children:{name:string;emoji:string;points:number}[];catalog:{kind:'task'|'reward';category:string;title:string;emoji:string;value:number}[];familyGoal:number;step:number};
@@ -70,7 +71,7 @@ function Setup({status,request,done}:{status:Status;request:Request;done:()=>voi
     {step===1&&<section className="formFields"><p>הילד הראשון ברשימה יופיע כברירת מחדל. אפשר לשנות את הסדר. יתרת פתיחה לא נספרת כהישג של החודש.</p>
       {draft.children.map((child,i)=><fieldset className="setupRow" key={i}><legend>ילד/ה {i+1}{i===0?' · ברירת מחדל':''}</legend>
         <label>שם<input value={child.name} maxLength={40} onChange={e=>updateChild(i,{name:e.target.value})} disabled={busy}/></label>
-        <label>סמל<input value={child.emoji} maxLength={16} onChange={e=>updateChild(i,{emoji:e.target.value})} disabled={busy}/></label>
+        <ChildEmojiPicker value={child.emoji} disabled={busy} onChange={emoji=>updateChild(i,{emoji})} />
         <label>יתרת פתיחה<input type="number" min={0} max={1000000000} step={1} value={child.points} onChange={e=>updateChild(i,{points:Number(e.target.value)})} disabled={busy}/></label>
         <div className="toolbar"><button className="button" disabled={busy||i===0} onClick={()=>move(i,-1)} aria-label={'העברת '+(child.name||'ילד')+' למעלה'}>↑</button><button className="button" disabled={busy||i===draft.children.length-1} onClick={()=>move(i,1)} aria-label={'העברת '+(child.name||'ילד')+' למטה'}>↓</button><button className="button ghost" disabled={busy} onClick={()=>setDraft({...draft,children:draft.children.filter((_,n)=>n!==i)})}>הסרה</button></div>
       </fieldset>)}

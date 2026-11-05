@@ -94,7 +94,7 @@ test('completion is atomic and replay-safe; balances/order survive and passwords
   assert.equal(f.sql.prepare('SELECT code_hash FROM parent_recovery').get().code_hash,encoded);
   assert(!JSON.stringify(f.sql.prepare('SELECT * FROM parent_recovery').all()).includes(raw));
 
-  assert.deepEqual(f.sql.prepare('SELECT name,points FROM members ORDER BY rowid').all().map(r=>[r.name,r.points]),[['First child',190],['Second child',140]]);
+  assert.deepEqual(f.sql.prepare('SELECT name,emoji,points FROM members ORDER BY rowid').all().map(r=>[r.name,r.emoji,r.points]),[['First child','⭐',190],['Second child','🌱',140]]);
   assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM catalog').get().n,2);
   assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM history').get().n,0);
   assert.equal(f.sql.prepare('SELECT parent_password_hash FROM onboarding').get().parent_password_hash,null);
