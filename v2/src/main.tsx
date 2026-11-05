@@ -836,6 +836,10 @@ function App() {
         )}
         {tab === "admin" && parent && (
           <>
+            <p className="smallMuted">
+              גרסת אפליקציה <bdi>{__APP_VERSION__}</bdi>
+              {__APP_REVISION__ && <> · מהדורה <bdi>{__APP_REVISION__}</bdi></>}
+            </p>
             <div className="adminStats">
               <div className="card stat">
                 <strong>{n(total)}</strong>
