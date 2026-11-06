@@ -26,7 +26,7 @@ class ImportTests(unittest.TestCase):
             write('History',['User','Action','Points','Timestamp'],rows)
             write('MonthlyLedger',['User','Action','Points','Timestamp'],rows[:1])
             sql, summary, _=module.build(folder,datetime(2026,11,4,tzinfo=timezone.utc))
-            db=sqlite3.connect(':memory:');db.executescript((ROOT/'migrations/0001_initial.sql').read_text());db.executescript(sql)
+            db=sqlite3.connect(':memory:');db.executescript((ROOT/'migrations/0001_initial.sql').read_text(encoding='utf-8'));db.executescript(sql)
             self.assertEqual(summary['history'],2)
             self.assertEqual(db.execute('SELECT points FROM members').fetchone()[0],175)
             self.assertEqual(db.execute('SELECT at FROM history LIMIT 1').fetchone()[0],'2026-11-01T10:00:00.000Z')
