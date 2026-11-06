@@ -17,7 +17,29 @@ React/TypeScript interface and Cloudflare Worker/D1 backend for the current Hebr
 
 One Worker and D1 database serve one family. Newly provisioned instances have an invitation-gated parent wizard for adding/reordering children, opening balances, optional activities/prizes, the monthly goal and review. Existing family installations bypass it. Parents need not appear as point-earning participants. See [PROVISIONING.md](PROVISIONING.md) for the local preparation tool and Cloudflare pilot requirements. Provisioning does not yet create Cloudflare resources automatically; guided workbook import remains future work. Parent password recovery is documented in [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md). Managed pilot/selected/all rollout is implemented but inactive pending protected credentials and cutover; see [RELEASES.md](RELEASES.md).
 
-## Validation
+## Local testing with sample data
+
+For shared work from this computer, desktop or phone, use `develop`. See the [branching and release workflow](DEVELOPMENT.md) for `develop` → `pilot` → `family-rewards-v2` and the pilot deployment settings.
+
+With Node 24+ installed, run from the repository root:
+
+```powershell
+cd v2
+npm ci
+npm run local:setup
+npm run build
+npm run dev
+```
+
+Open http://localhost:4173. The sample family password is `family-local` and the parent password is `parent-local`. The samples include two fictional children, activities, prizes, personal goals and recent history. These public test passwords are stored as verifiers only in the local database; no `.dev.vars` setup is needed.
+
+The development server uses `wrangler.local.jsonc`, a separate dummy database binding, and local SQLite storage under ignored `.wrangler/`. No Cloudflare login or connection to the production app or pilot is needed. Data persists between restarts. `local:setup` keeps existing data; `npm run local:reset` replaces **all local test data and passwords** with fresh samples. Stop the server before resetting. Deployment still uses the existing production configuration.
+
+For later sessions, run `npm run dev`; rerun `npm run build` after frontend changes. For frontend hot reload, run `npm run dev:api` and `npm run dev:ui` in separate terminals and use the Vite URL. Both use the same local API database.
+
+To test with actual exported data instead, use a separate reviewed import into an empty local database. The legacy CSV importer below accepts Google Sheets CSV exports, not Excel workbooks or a D1 database dump. Keep private exports out of Git.
+
+## Validation commands
 
 Node 24+ and Python 3.12+:
 

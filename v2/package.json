@@ -9,11 +9,13 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "dev": "node scripts/dev.mjs",
+    "local:setup": "node scripts/local-setup.mjs",
+    "local:reset": "node scripts/local-setup.mjs --reset",
     "deploy": "npm run build && wrangler deploy",
     "credentials": "node scripts/hash-password.mjs",
     "build": "tsc && vite build",
     "dev:ui": "vite --host 0.0.0.0",
-    "dev:api": "wrangler dev"
+    "dev:api": "wrangler dev --local --config wrangler.local.jsonc"
   },
   "dependencies": {
     "react": "19.3.1",

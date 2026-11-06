@@ -12,8 +12,11 @@ const child = spawn(
   [
     "node_modules/wrangler/bin/wrangler.js",
     "dev",
+    "--local",
+    "--config",
+    "wrangler.local.jsonc",
     "--ip",
-    option("--host", "0.0.0.0"),
+    option("--host", "127.0.0.1"),
     "--port",
     port,
   ],
